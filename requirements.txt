@@ -1,0 +1,5 @@
+# Conjunto COMPLETO de producao — use no PC de destino (RTX 4070).
+# Na maquina de desenvolvimento use requirements-dev.txt.
+
+-r requirements-base.txt
+-r requirements-audio.txt

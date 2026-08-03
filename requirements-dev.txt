@@ -1,0 +1,7 @@
+# Ambiente de DESENVOLVIMENTO (maquina sem GPU).
+# Nao inclui requirements-audio.txt de proposito: Kokoro/onnxruntime nao sao
+# necessarios para escrever ou testar o codigo aqui.
+
+-r requirements-base.txt
+
+pytest>=8.3.0

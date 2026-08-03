@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>Agência Brasil - Economia</title>
+    <link>https://agenciabrasil.ebc.com.br/economia</link>
+    <description>Notícias da Agência Brasil</description>
+    <item>
+      <title>Copom mantém a Selic em 15% ao ano na terceira reunião consecutiva</title>
+      <link>https://agenciabrasil.ebc.com.br/economia/copom-mantem-selic</link>
+      <description>Decisão foi unânime entre os membros do comitê.</description>
+      <pubDate>Mon, 03 Aug 2026 13:00:00 GMT</pubDate>
+    </item>
+    <item>
+      <title>IBGE divulga IPCA de julho nesta sexta-feira</title>
+      <link>https://agenciabrasil.ebc.com.br/economia/ipca-julho</link>
+      <description>Instituto publica o índice oficial de inflação.</description>
+      <!-- sem pubDate: fontes oficiais frequentemente omitem -->
+    </item>
+  </channel>
+</rss>

@@ -1,0 +1,31 @@
+# Segredos — NUNCA commitar
+.env
+*.key
+
+# Dados gerados pelo pipeline
+data/
+output/
+*.mp3
+*.wav
+
+# Modelos locais (Kokoro/Ollama) — baixados no PC de destino
+models/
+*.onnx
+*.bin
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Editores / SO
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini

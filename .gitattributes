@@ -1,0 +1,12 @@
+# Normaliza fim de linha: LF no repositorio, nativo no working copy.
+* text=auto
+
+*.py   text eol=lf
+*.md   text eol=lf
+*.txt  text eol=lf
+*.xml  text eol=lf
+*.ini  text eol=lf
+
+*.mp3  binary
+*.wav  binary
+*.onnx binary

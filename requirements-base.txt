@@ -1,0 +1,8 @@
+# Dependencias que rodam em QUALQUER maquina (sem GPU).
+# Etapas 1 (RSS), 3 (API paga) e 5 (feed RSS).
+
+feedparser>=6.0.11      # etapa 1 — parsing de RSS/Atom
+requests>=2.32.0        # etapa 1 (download dos feeds) e etapa 2 (HTTP do Ollama)
+python-dotenv>=1.0.1    # carregar .env
+anthropic>=0.69.0       # etapa 3 — API paga (sintese do roteiro)
+feedgen>=1.0.0          # etapa 5 — geracao do feed RSS do podcast

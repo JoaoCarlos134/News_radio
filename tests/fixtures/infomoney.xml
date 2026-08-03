@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>InfoMoney - Mercados</title>
+    <link>https://www.infomoney.com.br/mercados/</link>
+    <description>Notícias de mercado</description>
+    <item>
+      <title>Copom mantém Selic em 15% ao ano pela terceira reunião seguida</title>
+      <link>https://www.infomoney.com.br/mercados/copom-selic-15?utm_source=rss&amp;utm_medium=feed&amp;id=42</link>
+      <description><![CDATA[<p>O Comitê de Política Monetária decidiu por <strong>unanimidade</strong> manter a taxa básica de juros. O comunicado manteve o tom cauteloso.</p>]]></description>
+      <pubDate>Mon, 03 Aug 2026 12:30:00 GMT</pubDate>
+      <category>Juros</category>
+      <category>Copom</category>
+    </item>
+    <item>
+      <title>Ibovespa fecha em alta de 1,2% puxado por bancos</title>
+      <link>https://www.infomoney.com.br/mercados/ibovespa-alta-bancos/</link>
+      <description>O índice encerrou o pregão aos 142 mil pontos.</description>
+      <pubDate>Mon, 03 Aug 2026 21:15:00 GMT</pubDate>
+    </item>
+    <item>
+      <title>Notícia antiga que já saiu da janela de coleta</title>
+      <link>https://www.infomoney.com.br/mercados/noticia-antiga</link>
+      <description>Publicada há vários dias.</description>
+      <pubDate>Tue, 28 Jul 2026 09:00:00 GMT</pubDate>
+    </item>
+    <item>
+      <title>Item sem link deve ser descartado</title>
+      <description>Sem link não há o que sintetizar.</description>
+      <pubDate>Mon, 03 Aug 2026 10:00:00 GMT</pubDate>
+    </item>
+  </channel>
+</rss>
