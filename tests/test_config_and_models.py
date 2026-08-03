@@ -162,8 +162,18 @@ class TestSources:
     def test_busca_por_chave(self):
         from podcast.sources import source_by_key
 
-        assert source_by_key("infomoney_mercados") is not None
+        assert source_by_key("infomoney") is not None
         assert source_by_key("nao_existe") is None
+
+    def test_fontes_desabilitadas_ficam_fora_da_coleta(self):
+        from podcast.sources import FEED_SOURCES, enabled_sources
+
+        ativas = enabled_sources()
+        assert all(s.enabled for s in ativas)
+        # BCB, IBGE e FGV foram verificados e não são utilizáveis hoje;
+        # continuam no registro, mas não podem entrar na coleta.
+        assert len(ativas) < len(FEED_SOURCES)
+        assert "bcb_noticias" not in {s.key for s in ativas}
 
 
 class TestSemCaminhosAbsolutosNoCodigo:

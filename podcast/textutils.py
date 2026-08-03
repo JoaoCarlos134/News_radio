@@ -58,6 +58,36 @@ def strip_html(raw: str | None) -> str:
     return re.sub(r"\s+", " ", text).strip()
 
 
+# Caracteres invisiveis que varios CMS injetam no texto. Gastam token e podem
+# atrapalhar tanto a comparacao de titulos quanto a leitura pelo TTS.
+_INVISIVEIS = str.maketrans("", "", "​‌‍⁠﻿­")
+
+# Rodapes de boilerplate observados nos feeds reais (coleta de 2026-08-03).
+_BOILERPLATE = (
+    # WordPress: "The post <titulo> appeared first on InfoMoney."
+    re.compile(r"\s*The post\b.*?\bappeared first on\b.*$", re.IGNORECASE | re.DOTALL),
+    # Folha: "Leia mais (08/03/2026 - 09h53)"
+    re.compile(r"\s*Leia mais\s*\([^)]*\)\s*$", re.IGNORECASE),
+    # Chamadas genericas de "continue lendo" no fim do resumo
+    re.compile(r"\s*(Continue lendo|Leia a matéria completa|Saiba mais)\s*[.…]*\s*$",
+               re.IGNORECASE),
+)
+
+
+def clean_summary(text: str) -> str:
+    """Remove boilerplate de CMS e caracteres invisiveis de um resumo.
+
+    O resumo vai direto para o prompt da etapa 3; rodape repetido em dezenas de
+    itens e token pago sem valor analitico.
+    """
+    if not text:
+        return ""
+    text = text.translate(_INVISIVEIS)
+    for padrao in _BOILERPLATE:
+        text = padrao.sub("", text)
+    return re.sub(r"\s+", " ", text).strip()
+
+
 def truncate(text: str, max_chars: int) -> str:
     """Corta em limite de palavra, sem cortar no meio de uma."""
     if len(text) <= max_chars:
@@ -73,15 +103,27 @@ _TRACKING_PARAMS = re.compile(
 )
 
 
+def unwrap_redirect(url: str) -> str:
+    """Extrai a URL real de um wrapper de redirecionamento.
+
+    A Folha publica links como
+        https://redir.folha.com.br/redir/online/mercado/rss091/*https://...
+    Sem desembrulhar, dois feeds da Folha apontando para o mesmo artigo por
+    caminhos de redirect diferentes escapam da deduplicacao por URL.
+    """
+    marcador = url.rfind("*http")
+    return url[marcador + 1:] if marcador != -1 else url
+
+
 def canonical_url(url: str) -> str:
-    """URL comparavel: sem fragmento, sem parametros de rastreamento.
+    """URL comparavel: sem wrapper de redirect, sem fragmento, sem rastreamento.
 
     Usada tanto para gerar o id estavel do item quanto para deduplicar o mesmo
     artigo chegando por feeds diferentes do mesmo veiculo.
     """
     if not url:
         return ""
-    parts = urlsplit(url.strip())
+    parts = urlsplit(unwrap_redirect(url.strip()))
     query = [(k, v) for k, v in parse_qsl(parts.query, keep_blank_values=True)
              if not _TRACKING_PARAMS.match(k)]
     path = parts.path.rstrip("/") or "/"

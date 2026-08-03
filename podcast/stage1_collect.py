@@ -27,6 +27,7 @@ from .models import Collection, FeedError, NewsItem
 from .sources import FeedSource, enabled_sources
 from .textutils import (
     canonical_url,
+    clean_summary,
     stable_id,
     strip_html,
     title_similarity,
@@ -91,7 +92,7 @@ def _entry_summary(entry) -> str:  # noqa: ANN001
     que nao devemos reproduzir (ver CLAUDE.md, restricao de copyright).
     """
     raw = getattr(entry, "summary", "") or getattr(entry, "description", "") or ""
-    return truncate(strip_html(raw), MAX_SUMMARY_CHARS)
+    return truncate(clean_summary(strip_html(raw)), MAX_SUMMARY_CHARS)
 
 
 def _entry_categories(entry, source: FeedSource) -> tuple[str, ...]:  # noqa: ANN001
