@@ -1,9 +1,9 @@
 """Configuracao central, lida de variaveis de ambiente (.env).
 
-Regra do projeto: nenhum caminho absoluto desta maquina de desenvolvimento pode
-vazar para o codigo. Tudo que e caminho de arquivo e resolvido em relacao a raiz
-do repositorio, de modo que clonar o repo no PC de destino funcione sem editar
-nada alem do .env.
+Regra do projeto: nenhum caminho absoluto de nenhuma das maquinas pode vazar para
+o codigo. Tudo que e caminho de arquivo e resolvido em relacao a raiz do
+repositorio, de modo que clonar o repo em qualquer uma das duas funcione sem
+editar nada alem do .env.
 """
 
 from __future__ import annotations
@@ -79,9 +79,12 @@ class ScriptConfig:
 
     api_key: str = ""
     model: str = "claude-sonnet-5"
-    max_tokens: int = 8000
+    max_tokens: int = 16000
     effort: str = "high"
-    target_minutes: int = 8
+    target_minutes: int = 22
+    # Teto rigido de duracao do episodio. O alvo fica abaixo dele de proposito:
+    # o modelo erra o tamanho para os dois lados, e estourar o teto e pior.
+    max_minutes: int = 30
 
     def require_api_key(self) -> str:
         if not self.api_key:
@@ -110,7 +113,7 @@ class AudioConfig:
             raise ConfigError(
                 "Arquivos do modelo Kokoro nao encontrados:\n  "
                 f"{listados}\n"
-                "Baixe-os no PC de destino (ver README, secao 'Setup no PC de destino')."
+                "Baixe-os na maquina com a RTX 4070 (ver README, 'Setup B')."
             )
 
 
@@ -187,9 +190,10 @@ def load_config(env_file: Path | None = None) -> Config:
         script=ScriptConfig(
             api_key=_env("ANTHROPIC_API_KEY", ""),
             model=_env("SCRIPT_MODEL", "claude-sonnet-5"),
-            max_tokens=_env_int("SCRIPT_MAX_TOKENS", 8000),
+            max_tokens=_env_int("SCRIPT_MAX_TOKENS", 16000),
             effort=_env("SCRIPT_EFFORT", "high"),
-            target_minutes=_env_int("SCRIPT_TARGET_MINUTES", 8),
+            target_minutes=_env_int("SCRIPT_TARGET_MINUTES", 22),
+            max_minutes=_env_int("SCRIPT_MAX_MINUTES", 30),
         ),
         audio=AudioConfig(
             model_path=_resolve(_env("KOKORO_MODEL_PATH", "./models/kokoro-v1.0.onnx")),

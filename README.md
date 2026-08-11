@@ -14,9 +14,9 @@ As decisões de arquitetura e as restrições do projeto estão em [CLAUDE.md](C
 | # | Etapa | Onde roda | Custo | Status |
 |---|-------|-----------|-------|--------|
 | 1 | Coleta RSS | qualquer máquina | R$0 | **implementada** |
-| 2 | Resumo/triagem (Ollama) | **exige GPU** | R$0 | esqueleto |
+| 2 | Resumo/triagem (Ollama) | **exige GPU** | R$0 | **implementada** |
 | 3 | Síntese do roteiro (API paga) | qualquer máquina | ~R$0,50/dia | **implementada** |
-| 4 | Áudio (Kokoro TTS) | **exige GPU/modelo** | R$0 | esqueleto |
+| 4 | Áudio (Kokoro TTS) | **exige GPU/modelo** | R$0 | **implementada** |
 | 5 | Publicação do feed | qualquer máquina | R$0 | esqueleto |
 
 Cada etapa lê o JSON da anterior e escreve o próprio em `data/`, então dá para
@@ -24,22 +24,30 @@ rodar e inspecionar cada uma isoladamente.
 
 ---
 
-## ⚠️ Dois ambientes diferentes
+## ⚠️ Duas máquinas, ambas de desenvolvimento
 
-Este projeto roda em duas máquinas com propósitos distintos. **Não misture os
-setups** — o de desenvolvimento não instala nada de GPU de propósito.
+O código é desenvolvido nas **duas** máquinas — o repositório é sincronizado por
+Git e qualquer uma delas pode escrever código, rodar os testes e commitar. A
+diferença é só o que cada uma **consegue executar**, e qual delas roda o pipeline
+de verdade de madrugada.
 
-| | Máquina de desenvolvimento | PC de destino (produção) |
+| | Máquina sem GPU | Máquina com RTX 4070 |
 |---|---|---|
 | Hardware | sem GPU | RTX 4070, 12 GB VRAM |
-| Para que serve | escrever código, rodar testes, versionar | rodar o pipeline de madrugada |
-| Instala | `requirements-dev.txt` | `requirements.txt` |
-| Etapas que rodam | 1, 3 e os testes | todas |
-| Ollama / Kokoro | **não** | sim |
+| Desenvolvimento | sim | sim |
+| Roda o pipeline em produção (madrugada) | não | **sim** |
+| Instala | `requirements-dev.txt` | `requirements.txt` + `requirements-dev.txt` |
+| Etapas que consegue executar | 1, 3 e os testes | todas |
+| Ollama / Kokoro | não | sim |
+
+Os testes rodam nas duas — é isso que mantém o desenvolvimento possível na
+máquina sem GPU. Ao implementar as etapas 2, 4 e 5, mantenha a injeção de
+dependência (ver [Desenvolvimento](#desenvolvimento)) para que a suíte continue
+verde nos dois lados.
 
 ---
 
-## Setup A — máquina de desenvolvimento (sem GPU)
+## Setup A — máquina sem GPU (só desenvolvimento)
 
 Aqui você escreve código e roda testes. Nada de GPU, nada de modelos baixados.
 
@@ -86,27 +94,40 @@ coleta bruta. Serve para testar a chamada da API paga aqui; **não é o caminho 
 produção** — sem a triagem da etapa 2 a qualidade do roteiro cai.
 
 > **Não tente aqui:** instalar Ollama, baixar modelos de LLM, instalar Kokoro ou
-> rodar `summarize` / `audio`. Não vai funcionar sem GPU e não é o objetivo desta
-> máquina.
+> rodar `summarize` / `audio`. Sem GPU essas etapas não executam — o que não
+> impede desenvolvê-las aqui: escreva o código e os testes com o cliente
+> injetado, e valide a execução real na máquina com a 4070.
 
 ---
 
-## Setup B — PC de destino (RTX 4070)
+## Setup B — máquina com RTX 4070 (desenvolvimento + produção)
 
-Este é o setup completo, onde o pipeline realmente roda. Faça na ordem.
+Setup completo: desenvolve como a outra máquina **e** roda o pipeline de
+madrugada. Faça na ordem.
 
 ### 1. Repositório e dependências
+
+> **Use Python 3.13.** O `kokoro-onnx` (etapa 4) ainda declara
+> `Requires-Python >=3.10,<3.14`, então num venv de Python 3.14 o
+> `pip install -r requirements.txt` falha em `kokoro-onnx`. As etapas 1, 2, 3 e 5
+> funcionam no 3.14; a 4 não.
+>
+> No 3.13 o `pydub` também precisa do backport `audioop-lts` — o módulo
+> `audioop` saiu da stdlib no 3.13 (PEP 594). Já está no
+> `requirements-audio.txt` com marcador de versão, então o `pip install` resolve
+> sozinho; só não estranhe a dependência extra.
 
 ```bash
 git clone git@github.com:JoaoCarlos134/News_radio.git
 cd News_radio
-python -m venv .venv
+py -3.13 -m venv .venv
 ```
 
-Ative o ambiente e instale **tudo** (inclui as dependências de áudio):
+Ative o ambiente e instale **tudo** — produção (inclui áudio) mais as
+ferramentas de desenvolvimento, já que aqui também se escreve código:
 
 ```bash
-pip install -r requirements.txt
+pip install -r requirements.txt -r requirements-dev.txt
 ```
 
 ### 2. ffmpeg (necessário para exportar mp3)
@@ -154,9 +175,10 @@ As vozes em português brasileiro do Kokoro v1.0 são `pf_dora` (feminina),
 `pm_alex` e `pm_santa` (masculinas). Estão configuradas em `KOKORO_VOICE_MARIA`
 e `KOKORO_VOICE_PEDRO`.
 
-> **Antes de investir na etapa 4:** gere um trecho de teste e **ouça**. O CLAUDE.md
-> prevê trocar o Kokoro por Coqui XTTS v2 ou Chatterbox se a qualidade em PT-BR
-> não convencer. Não vale otimizar essa etapa antes dessa decisão.
+**A Maria usa `ef_dora`, não `pf_dora`.** É a mesma locutora no pack espanhol do
+Kokoro, com um vetor de estilo melhor treinado; como a fonetização continua
+`pt-br`, os termos brasileiros saem corretos e o timbre soa melhor. Isso foi
+decidido ouvindo seis variantes lado a lado — não troque sem repetir o teste.
 
 ### 5. Chave da API paga (etapa 3)
 
@@ -220,15 +242,31 @@ Flags úteis:
 
 O orçamento do projeto é R$50/mês. Só a etapa 3 custa dinheiro.
 
+Preço de tabela por milhão de tokens: `claude-sonnet-5` US$3 entrada / US$15
+saída (promocional US$2 / US$10 até 31/08/2026); `claude-haiku-4-5` US$1 / US$5.
+
 | Modelo (`SCRIPT_MODEL`) | Por dia | Por mês | Observação |
 |---|---|---|---|
-| `claude-sonnet-5` | ~R$0,50 | ~R$15 | **padrão** — melhor análise |
-| `claude-haiku-4-5` | ~R$0,16 | ~R$5 | alternativa mais barata |
+| `claude-sonnet-5` | US$0,165 | **~R$27** | **padrão** — melhor análise |
+| `claude-sonnet-5` (promocional) | US$0,110 | ~R$18 | até 31/08/2026 |
+| `claude-haiku-4-5` | US$0,023 | ~R$4 | testado e rejeitado, ver abaixo |
 
-Estimativa para ~20 mil tokens de entrada e ~2 mil de saída por episódio. Como o
-CLAUDE.md define qualidade de conteúdo como prioridade #1 e é na etapa 3 que a
-análise acontece, o padrão é o modelo mais forte — ainda com folga grande no
-orçamento. Para trocar, basta editar `SCRIPT_MODEL` no `.env`.
+Números **medidos**, não estimados: um episódio real de 4/ago/2026 consumiu
+4145 tokens de entrada e 10141 de saída no Sonnet (o thinking adaptativo é
+cobrado como saída e responde por boa parte disso). Conversão a R$5,50/US$ —
+**confira o câmbio antes de tratar como firme**.
+
+> **O Haiku custa um sexto e não compensa.** No mesmo digest ele inventou uma
+> equivalência aritmética errada ("um vírgula oito por cento de um mês = dois
+> dias de trabalho"; são meio dia), variou de 1753 a 2614 palavras entre
+> execuções idênticas, e escorregou no português. Num programa que existe para
+> explicar economia, número inventado é o defeito que não dá para aceitar. Fica
+> como plano B se o orçamento apertar.
+
+> **Não troque para `claude-opus-5`** sem refazer a conta: a US$5/US$25 o
+> episódio passa de R$60/mês e estoura o orçamento de R$50.
+
+Para trocar, basta editar `SCRIPT_MODEL` no `.env`.
 
 As etapas 2 e 4 rodam localmente e custam R$0, o que é justamente o motivo de o
 diálogo de duas vozes ser viável (dobra o volume de TTS, mas TTS local é grátis).
@@ -260,19 +298,20 @@ podcast/
   sources.py         registro das fontes RSS
   textutils.py       limpeza de HTML, canonicalização de URL, similaridade de título
   stage1_collect.py  etapa 1 — IMPLEMENTADA
-  stage2_summarize.py  etapa 2 — esqueleto (comentado com o plano)
+  stage2_summarize.py  etapa 2 — IMPLEMENTADA
   stage3_script.py   etapa 3 — IMPLEMENTADA
-  stage4_audio.py    etapa 4 — esqueleto
+  stage4_audio.py    etapa 4 — IMPLEMENTADA
   stage5_publish.py  etapa 5 — esqueleto
   cli.py             interface de linha de comando
 
-tests/               101 testes; rodam sem GPU, sem rede e sem chave de API
+tests/               195 testes; rodam sem rede e sem chave de API. Os que
+                     exigem numpy/pydub/ffmpeg se auto-pulam na máquina sem GPU
 data/                saída do pipeline (ignorado pelo Git)
 models/              modelos do Kokoro (ignorado pelo Git)
 ```
 
-Os esqueletos das etapas 2, 4 e 5 não são arquivos vazios: cada um traz no
-docstring o plano de implementação, a API a usar e as armadilhas conhecidas.
+O esqueleto da etapa 5 não é um arquivo vazio: traz no docstring o plano de
+implementação, a API a usar e as armadilhas conhecidas.
 
 ---
 

@@ -34,6 +34,47 @@ diálogo de chatbot + áudio diário).
     usuário, mesmo sabendo que dobra o custo de TTS — mitigado usando TTS local (ver
     abaixo), que torna esse custo irrelevante.
 
+## Decisões tomadas depois, com o pipeline já rodando (4/agosto/2026)
+
+- **Episódio de ~22 minutos, didático, com teto rígido de 30.** A restrição
+  original de "2-4 temas" existia para proteger profundidade num episódio de 8
+  minutos. Com 22 minutos o programa cobre 4-6 temas *e* explica os termos
+  (Selic, Copom, Ibovespa, IPCA...) na primeira vez que aparecem — a Maria puxa
+  a explicação, o Pedro dá o mecanismo. Profundidade continua sendo a prioridade;
+  o que mudou foi o espaço disponível para ela.
+- **Custo: a folga encolheu.** O episódio longo custa ~R$35/mês em vez dos ~R$15
+  do formato de 8 minutos (o custo é dominado pela saída, e a saída triplicou).
+  Ainda cabe nos R$50, mas trocar para um modelo mais caro que o `claude-sonnet-5`
+  agora estoura o orçamento. Ver a tabela no README antes de mexer em
+  `SCRIPT_MODEL` ou `SCRIPT_TARGET_MINUTES`.
+- **Voz da Maria: `ef_dora`, decidido de ouvido.** O pack PT-BR do Kokoro tem só
+  três vozes e uma única feminina (`pf_dora`), que soou artificial. `ef_dora` é a
+  mesma locutora no pack espanhol com um vetor de estilo melhor treinado; com
+  `lang="pt-br"` a fonetização continua correta. Foram comparadas seis variantes
+  (incluindo vozes inglesas e uma mistura de vetores) antes de decidir.
+- **Podcast fica em português.** Chegou-se a testar roteiro e vozes em inglês —
+  as vozes inglesas do Kokoro são bem melhores —, mas elas erram justamente os
+  nomes próprios que dominam o programa (Ibovespa, Selic, Copom, Petrobras).
+  Trocar uma voz sintética por uma pronúncia errada em toda frase não compensa.
+- **Ritmo de fala medido num episódio inteiro: 172 palavras/min.** O número cai
+  conforme a amostra cresce — bloco corrido dá 202, diálogo de 11 falas dá 177,
+  episódio de 75 falas dá 172 — porque cada fala acrescenta pausa e cadência de
+  fim de frase. Só a última medição vale: com 195 o teto de "30 min" entregava
+  33 min reais, e com 177 entregaria 30,8. Aferido contra um mp3 de verdade:
+  3227 palavras → 18,74 min. Remedir **em episódio completo** se `KOKORO_SPEED`
+  ou `KOKORO_GAP_MS` mudarem.
+- **O modelo entrega ~83% do tamanho pedido, e pedir o total não funciona.**
+  "Cerca de 3900 palavras" rendeu 1904; trocar pelo orçamento decomposto ("com 5
+  temas, ~780 palavras por tema, 12 a 16 falas cada") levou a 3227. Se um dia
+  precisar de 22 min reais, suba `SCRIPT_TARGET_MINUTES` para 26-27 e deixe o
+  teto absorver — não adianta insistir no número total.
+- **`claude-haiku-4-5` foi testado e rejeitado como padrão.** Custa R$4,81/mês
+  contra R$27, mas inventou aritmética ("1,8% de um mês = dois dias de
+  trabalho"; é meio dia), variou de 1753 a 2614 palavras entre execuções com o
+  mesmo digest, e cometeu erros de idioma. Num programa cujo propósito é
+  explicar economia, isso é o erro que não dá para aceitar. Continua como plano
+  B se o orçamento apertar.
+
 ## Arquitetura (5 etapas, pipeline noturno via cron/Task Scheduler)
 
 1. **Coleta (grátis, RSS)**

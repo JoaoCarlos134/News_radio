@@ -1,5 +1,8 @@
-# Conjunto COMPLETO de producao — use no PC de destino (RTX 4070).
-# Na maquina de desenvolvimento use requirements-dev.txt.
+# Conjunto COMPLETO de producao — use na maquina com a RTX 4070, junto com
+# requirements-dev.txt (la tambem se desenvolve).
+# Na maquina sem GPU, so requirements-dev.txt.
+#
+# Precisa de Python <3.14: kokoro-onnx ainda nao publica wheel para 3.14.
 
 -r requirements-base.txt
 -r requirements-audio.txt

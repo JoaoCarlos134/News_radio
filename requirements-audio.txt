@@ -1,11 +1,16 @@
 # Dependencias de AUDIO — etapa 4 (Kokoro TTS local).
-# Instale APENAS no PC de destino (RTX 4070). Nao instale na maquina de dev:
+# Instale APENAS na maquina com a RTX 4070. Na maquina sem GPU nao instale:
 # baixa modelos pesados e nao roda sem GPU/ffmpeg.
 #
-# Pre-requisito de sistema: ffmpeg no PATH (necessario pelo pydub para exportar mp3).
+# Pre-requisitos: ffmpeg no PATH (pydub exporta mp3 por ele) e Python <3.14
+# (kokoro-onnx declara Requires-Python >=3.10,<3.14).
 
 kokoro-onnx>=0.4.9      # TTS local, Apache 2.0, vozes PT-BR
 onnxruntime-gpu>=1.20.0 # runtime CUDA; troque por `onnxruntime` para rodar em CPU
 soundfile>=0.12.1       # leitura/escrita dos samples gerados pelo Kokoro
 pydub>=0.25.1           # concatenacao das falas e export para mp3
 numpy>=1.26.0
+
+# O pydub importa `audioop`, removido da stdlib no Python 3.13 (PEP 594).
+# Este backport devolve o modulo; sem ele o `import pydub` falha.
+audioop-lts>=0.2.1; python_version >= "3.13"

@@ -197,9 +197,11 @@ def cmd_script(config: Config, args: argparse.Namespace) -> int:
     script = generate_script(digest, config.script)
     path = save_script(script, config.scripts_dir)
 
+    from .stage3_script import estimate_minutes
+
     print(f"\n{script.title}")
     print(f"{len(script.lines)} falas, {script.word_count} palavras "
-          f"(~{script.word_count // 155} min)")
+          f"(~{estimate_minutes(script.word_count):.0f} min)")
     print(f"Temas: {', '.join(script.themes)}")
     print(f"Gravado em {path}")
 

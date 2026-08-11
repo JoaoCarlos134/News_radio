@@ -23,7 +23,21 @@ from .models import Digest, Script, ScriptLine, SummarizedItem
 log = logging.getLogger(__name__)
 
 # Ritmo de leitura do Kokoro em PT-BR, usado para converter minutos em palavras.
-WORDS_PER_MINUTE = 155
+#
+# MEDIDO num episodio inteiro de verdade: 3227 palavras em 75 falas (94 trechos
+# depois da quebra por frase) deram 18,74 min de mp3 — 172 palavras/min.
+#
+# O numero cai conforme a amostra cresce, e por isso a medicao boa e a do
+# episodio completo:
+#     bloco unico de texto ......... 202 pal/min  (sem pausa, sem entonacao final)
+#     dialogo de 11 falas .......... 177 pal/min
+#     episodio de 75 falas ......... 172 pal/min  <- este
+# Cada fala adiciona pausa e uma cadencia de fim de frase; quanto mais falas,
+# mais lento o conjunto. Com 195 o teto de 30 min entregava 33 min reais.
+#
+# Depende de KOKORO_SPEED e de KOKORO_GAP_MS — mexeu neles, remeça, e remeça
+# num episodio completo, nao numa amostra curta.
+WORDS_PER_MINUTE = 172
 
 SYSTEM_PROMPT = """\
 Você escreve o roteiro de um podcast diário brasileiro de economia e geopolítica, \
@@ -40,15 +54,37 @@ Não são dois locutores lendo blocos alternados.
 mercado. Direto, sem jargão gratuito, sem entusiasmo publicitário.
 
 Regras de conteúdo:
-- Cubra de 2 a 4 temas, em profundidade. Não tente cobrir tudo o que aconteceu; \
+- Cubra de 4 a 6 temas, em profundidade. Não tente cobrir tudo o que aconteceu; \
 um tema bem explicado vale mais que seis manchetes lidas.
-- Priorize o que muda decisões: juros, câmbio, inflação, atividade, e os eventos \
-geopolíticos com efeito econômico real.
+- O eixo do programa é a economia brasileira: juros (Selic e Copom), bolsa \
+(Ibovespa e as empresas que a movem), câmbio, inflação e atividade. Notícia \
+internacional entra quando tem efeito sobre esse eixo — não como bloco separado.
 - Conecte os temas quando houver ligação genuína. Não force.
 - Números importam: cite os que estiverem nos resumos. Nunca invente número, data, \
 nome ou declaração que não esteja no material fornecido.
 - Se o material for insuficiente para afirmar algo, trate como incerto no próprio \
 roteiro ("ainda não está claro se...").
+
+Didática — o ouvinte não é do mercado:
+- Todo termo técnico é explicado na primeira vez que aparece no episódio, em uma \
+frase, dentro da conversa. Não é um glossário à parte: é o Pedro explicando \
+porque a Maria perguntou. Vale para Selic, Copom, Ibovespa, IPCA, Boletim Focus, \
+ponto-base, curva de juros, e qualquer sigla ou jargão.
+- Maria é quem puxa a explicação. Ela pergunta o que o ouvinte perguntaria: \
+"o que é isso na prática?", "por que isso mexe no meu bolso?", "isso é muito ou \
+pouco?". Ela não finge saber para o programa andar mais rápido.
+- Depois de explicar o termo, mostre o mecanismo: o que causa o quê, e em quanto \
+tempo o efeito aparece. "Juro alto encarece crédito, crédito caro segura consumo, \
+consumo fraco derruba preço — e isso leva meses, não semanas."
+- Ordem de grandeza importa mais que o número exato. Diga se um dado é grande ou \
+pequeno, e comparado com o quê: "meio ponto percentual parece pouco, mas numa \
+dívida do tamanho da brasileira são dezenas de bilhões por ano".
+- Analogia que envolve conta é conta: só use se ela fechar. "Um vírgula oito por \
+cento de um mês" não vira "dois dias de trabalho" — vira meio dia. Se não tiver \
+certeza da aritmética, descreva o efeito em palavras em vez de inventar a \
+equivalência.
+- Não repita a mesma explicação em dois temas diferentes. Explicou uma vez, pode \
+usar o termo à vontade depois.
 
 Regras de forma (o texto vira áudio por TTS — ninguém vai ler isto):
 - Escreva números por extenso quando a leitura exigir: "treze e vinte e cinco por \
@@ -56,7 +92,19 @@ cento", "um vírgula dois por cento", "dois mil e vinte e seis".
 - Sem markdown, sem marcadores, sem títulos, sem emoji, sem texto entre parênteses \
 de direção de cena.
 - Frases faladas, não escritas. Cada fala tem de 1 a 5 frases.
-- Comece com Maria, alterne, e termine com uma fala de despedida.
+- O episódio é gerado de madrugada e ouvido de manhã: abra cumprimentando com \
+"bom dia", nunca "boa tarde" ou "boa noite".
+- Comece com Maria e ALTERNE a cada fala: Maria, Pedro, Maria, Pedro. Nunca duas \
+falas seguidas do mesmo locutor — se um deles tem mais a dizer, é o outro que \
+puxa a continuação com uma pergunta.
+- Termine com uma fala de despedida.
+- Respeite o tamanho pedido, que vem na mensagem do usuário com o orçamento de \
+palavras por tema. Roteiro curto demais é o erro mais comum aqui: não encerre o \
+episódio enquanto não tiver desenvolvido cada tema no tamanho combinado. Se \
+sentir que está acabando cedo, é porque faltou aprofundar — volte e explique o \
+mecanismo, traga o contexto histórico do dado, ou discuta o efeito prático sobre \
+o ouvinte.
+- Se precisar escolher, prefira quatro temas bem desenvolvidos a seis correndo.
 
 Copyright — obrigatório:
 Você recebe apenas manchetes e resumos curtos. Sintetize e analise com suas \
@@ -108,9 +156,25 @@ SCRIPT_SCHEMA = {
 }
 
 
-def build_user_prompt(digest: Digest, episode_date: str, target_minutes: int) -> str:
+def minutes_to_words(minutes: int) -> int:
+    """Duracao falada -> numero de palavras, no ritmo medido do Kokoro."""
+    return minutes * WORDS_PER_MINUTE
+
+
+def estimate_minutes(word_count: int) -> float:
+    """Numero de palavras -> duracao falada estimada."""
+    return word_count / WORDS_PER_MINUTE
+
+
+def build_user_prompt(
+    digest: Digest,
+    episode_date: str,
+    target_minutes: int,
+    max_minutes: int = 30,
+) -> str:
     """Monta o prompt com os resumos filtrados da etapa 2."""
-    target_words = target_minutes * WORDS_PER_MINUTE
+    target_words = minutes_to_words(target_minutes)
+    max_words = minutes_to_words(max_minutes)
 
     blocos = []
     for n, item in enumerate(digest.items, start=1):
@@ -123,10 +187,25 @@ def build_user_prompt(digest: Digest, episode_date: str, target_minutes: int) ->
 
     temas = ", ".join(digest.themes) if digest.themes else "(não pré-identificados)"
 
+    # Decomposicao explicita: pedir so o total faz o modelo entregar metade.
+    # Com o orcamento por tema ele tem como conferir o proprio tamanho enquanto
+    # escreve, em vez de estimar 4 mil palavras de cabeca.
+    palavras_por_tema = target_words // 5
+
     return (
-        f"Data do episódio: {episode_date}\n"
-        f"Duração alvo: {target_minutes} minutos, ou seja cerca de "
-        f"{target_words} palavras no total do roteiro.\n"
+        f"Data do episódio: {episode_date}\n\n"
+        f"TAMANHO — leia com atenção, é onde roteiros costumam falhar:\n"
+        f"O episódio tem {target_minutes} minutos, ou seja {target_words} palavras. "
+        f"Esse número é o alvo E o mínimo: um roteiro de {target_words // 2} "
+        "palavras é metade do programa e não serve.\n"
+        f"Como chegar lá: com 5 temas, cada tema precisa de cerca de "
+        f"{palavras_por_tema} palavras — algo como 12 a 16 falas por tema, não 6. "
+        "Cada tema é um bloco completo: abre, explica o termo, mostra o mecanismo, "
+        "traz os números, discute o efeito sobre o ouvinte e fecha antes do "
+        "próximo. Some as falas de abertura e despedida por cima disso.\n"
+        f"Teto absoluto: {max_minutes} minutos ({max_words} palavras). Se o "
+        "material render mais que isso, corte um tema inteiro — nunca encurte as "
+        "explicações dos temas que ficarem.\n\n"
         f"Temas pré-identificados na triagem: {temas}\n\n"
         "Notícias disponíveis (manchete + resumo publicado pelo veículo):\n\n"
         + "\n\n".join(blocos)
@@ -160,7 +239,9 @@ def generate_script(
         "system": SYSTEM_PROMPT,
         "messages": [{
             "role": "user",
-            "content": build_user_prompt(digest, episode_date, config.target_minutes),
+            "content": build_user_prompt(
+                digest, episode_date, config.target_minutes, config.max_minutes,
+            ),
         }],
         "output_config": {"format": {"type": "json_schema", "schema": SCRIPT_SCHEMA}},
     }
@@ -182,7 +263,24 @@ def generate_script(
             f"(atual: {config.max_tokens})"
         )
 
-    return parse_script_response(response, episode_date, config.model)
+    script = parse_script_response(response, episode_date, config.model)
+
+    # O modelo controla o tamanho por contagem de palavras, que e aproximada.
+    # Um episodio um pouco longo nao justifica perder a execucao da madrugada —
+    # mas tem de aparecer no log, porque e o sinal de que o prompt precisa de
+    # ajuste. A etapa 4 loga a duracao real depois.
+    duracao = estimate_minutes(script.word_count)
+    if duracao > config.max_minutes:
+        log.warning(
+            "roteiro estimado em %.1f min, acima do teto de %d min "
+            "(%d palavras). Episódio será gerado assim mesmo; se repetir, "
+            "reduza SCRIPT_TARGET_MINUTES ou MAX_ITEMS_TO_STAGE3.",
+            duracao, config.max_minutes, script.word_count,
+        )
+    else:
+        log.info("roteiro de %d palavras (~%.1f min)", script.word_count, duracao)
+
+    return script
 
 
 def parse_script_response(response, episode_date: str, model: str) -> Script:  # noqa: ANN001

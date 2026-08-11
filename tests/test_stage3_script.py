@@ -18,8 +18,10 @@ from podcast.stage3_script import (
     SCRIPT_SCHEMA,
     _supports_adaptive_thinking,
     build_user_prompt,
+    estimate_minutes,
     generate_script,
     load_script,
+    minutes_to_words,
     save_script,
 )
 
@@ -85,27 +87,56 @@ RESPOSTA_OK = {
 
 class TestBuildUserPrompt:
     def test_inclui_titulos_e_resumos(self, digest):
-        prompt = build_user_prompt(digest, "2026-08-03", 8)
+        prompt = build_user_prompt(digest, "2026-08-03", 22)
         assert "Copom mantém Selic em 15%" in prompt
         assert "Decisão unânime" in prompt
 
     def test_inclui_fontes(self, digest):
-        prompt = build_user_prompt(digest, "2026-08-03", 8)
+        prompt = build_user_prompt(digest, "2026-08-03", 22)
         assert "InfoMoney" in prompt
         assert "BBC News Brasil" in prompt
 
     def test_inclui_data_e_alvo_de_duracao(self, digest):
-        prompt = build_user_prompt(digest, "2026-08-03", 8)
+        prompt = build_user_prompt(digest, "2026-08-03", 22)
         assert "2026-08-03" in prompt
-        assert "8 minutos" in prompt
-        assert "1240 palavras" in prompt  # 8 * 155
+        assert "22 minutos" in prompt
+        assert "3784 palavras" in prompt  # 22 * 172
+
+    def test_inclui_o_teto_de_duracao(self, digest):
+        # O teto e o que impede um episodio de 40 min de sair sem ninguem ver.
+        prompt = build_user_prompt(digest, "2026-08-03", 22, max_minutes=30)
+        assert "30 minutos" in prompt
+        assert "5160 palavras" in prompt  # 30 * 172
 
     def test_inclui_temas_da_triagem(self, digest):
         assert "política monetária" in build_user_prompt(digest, "2026-08-03", 8)
 
     def test_digest_sem_temas(self, digest):
         digest.themes = []
-        assert "não pré-identificados" in build_user_prompt(digest, "2026-08-03", 8)
+        assert "não pré-identificados" in build_user_prompt(digest, "2026-08-03", 22)
+
+
+class TestConversaoDeDuracao:
+    """O ritmo foi MEDIDO num episodio completo do Kokoro: 172 palavras/min.
+
+    Se alguem mexer no WORDS_PER_MINUTE sem remedir, estes testes caem — que e
+    exatamente o ponto: o teto de 30 min depende deste numero estar certo.
+    """
+
+    def test_minutos_viram_palavras(self):
+        assert minutes_to_words(22) == 3784
+
+    def test_palavras_viram_minutos(self):
+        assert estimate_minutes(3784) == pytest.approx(22.0)
+
+    def test_bate_com_o_episodio_medido(self):
+        # 3227 palavras em 75 falas viraram 18,74 min de mp3 de verdade.
+        assert estimate_minutes(3227) == pytest.approx(18.74, abs=0.2)
+
+    def test_o_teto_cabe_no_teto(self):
+        # O requisito e audio real abaixo de 30 min. Se a conversao subestimar,
+        # o teto vira ficcao — foi o que aconteceu com 195 e depois com 177.
+        assert estimate_minutes(minutes_to_words(30)) == pytest.approx(30.0)
 
 
 class TestGenerateScript:
@@ -187,6 +218,32 @@ class TestGenerateScript:
         })
         with pytest.raises(RuntimeError, match="locutor desconhecido"):
             generate_script(digest, ScriptConfig(api_key="t"), client=client)
+
+    def test_roteiro_acima_do_teto_avisa_mas_nao_falha(self, digest, caplog):
+        # Um episodio longo demais nao pode derrubar a execucao da madrugada,
+        # mas tem de deixar rastro — e o sinal de que o prompt saiu de calibragem.
+        gigante = {
+            "title": "T", "themes": [],
+            "lines": [
+                {"speaker": "Maria" if n % 2 == 0 else "Pedro",
+                 "text": "palavra " * 100}
+                for n in range(70)  # 7000 palavras -> ~40 min
+            ],
+        }
+        client = FakeClient(gigante)
+        with caplog.at_level("WARNING"):
+            script = generate_script(
+                digest, ScriptConfig(api_key="t", max_minutes=30), client=client,
+            )
+
+        assert len(script.lines) == 70  # gerado assim mesmo
+        assert "acima do teto" in caplog.text
+
+    def test_roteiro_dentro_do_teto_nao_avisa(self, digest, caplog):
+        client = FakeClient(RESPOSTA_OK)
+        with caplog.at_level("WARNING"):
+            generate_script(digest, ScriptConfig(api_key="t"), client=client)
+        assert "acima do teto" not in caplog.text
 
     def test_falas_vazias_sao_descartadas(self, digest):
         client = FakeClient({
