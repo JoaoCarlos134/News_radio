@@ -74,6 +74,13 @@ diálogo de chatbot + áudio diário).
   mesmo digest, e cometeu erros de idioma. Num programa cujo propósito é
   explicar economia, isso é o erro que não dá para aceitar. Continua como plano
   B se o orçamento apertar.
+- **Etapa 5 (publicação) implementada com GitHub Pages, não Cloudflare R2.**
+  `data/public/` é um `git worktree` apontando para a branch `gh-pages` do
+  mesmo repositório — a etapa 5 só faz `git add/commit/push` nela, nunca cria
+  a branch sozinha (configuração manual de uma vez, ver README "Publicação —
+  GitHub Pages"). Motivo: volume pequeno (30 episódios rotativos, mp3 em
+  96kbps) cabe folgado no limite do GitHub Pages, e não exige token/conta
+  separada como o R2 exigiria.
 
 ## Arquitetura (5 etapas, pipeline noturno via cron/Task Scheduler)
 

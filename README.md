@@ -17,7 +17,7 @@ As decisões de arquitetura e as restrições do projeto estão em [CLAUDE.md](C
 | 2 | Resumo/triagem (Ollama) | **exige GPU** | R$0 | **implementada** |
 | 3 | Síntese do roteiro (API paga) | qualquer máquina | ~R$0,50/dia | **implementada** |
 | 4 | Áudio (Kokoro TTS) | **exige GPU/modelo** | R$0 | **implementada** |
-| 5 | Publicação do feed | qualquer máquina | R$0 | esqueleto |
+| 5 | Publicação do feed | qualquer máquina | R$0 | **implementada** |
 
 Cada etapa lê o JSON da anterior e escreve o próprio em `data/`, então dá para
 rodar e inspecionar cada uma isoladamente.
@@ -184,7 +184,29 @@ decidido ouvindo seis variantes lado a lado — não troque sem repetir o teste.
 
 Crie a chave em <https://console.anthropic.com/settings/keys> e coloque no `.env`.
 
-### 6. Configuração
+### 6. Publicação — GitHub Pages (etapa 5)
+
+O feed (`feed.xml`) e os mp3 publicados ficam em `data/public/`, que precisa
+ser, de antemão, um checkout git da branch `gh-pages` — a etapa 5 só faz
+`git add/commit/push` nela, nunca cria a branch sozinha (isso é configuração
+manual de uma vez, não algo para rodar às cegas de madrugada).
+
+No GitHub: **Settings → Pages → Source → Deploy from a branch → `gh-pages`**
+(a branch pode nem existir ainda; o próximo passo cria).
+
+Localmente, use um *worktree* — assim `data/public/` é um checkout git normal
+da branch `gh-pages`, mas o resto do repositório continua na `main`:
+
+```bash
+git worktree add --orphan -b gh-pages data/public   # cria a branch vazia, sem tocar na main
+git -C data/public commit --allow-empty -m "Branch inicial do GitHub Pages"
+git -C data/public push -u origin gh-pages
+```
+
+A URL publicada vai ser `https://SEU-USUARIO.github.io/News_radio` — é esse
+valor que entra em `PODCAST_BASE_URL` no `.env` (próximo passo).
+
+### 7. Configuração
 
 ```bash
 cp .env.example .env
@@ -196,13 +218,13 @@ Edite o `.env`. O `.env.example` documenta cada variável. O mínimo a preencher
 |---|---|
 | `ANTHROPIC_API_KEY` | etapa 3 — chave da API paga |
 | `OLLAMA_MODEL` | etapa 2 — só se usar modelo diferente do padrão |
-| `PODCAST_BASE_URL` | etapa 5 — URL pública onde o feed vai ficar |
+| `PODCAST_BASE_URL` | etapa 5 — URL do GitHub Pages configurado no passo 6 |
 | `PODCAST_AUTHOR`, `PODCAST_EMAIL` | etapa 5 — metadados do feed |
 
 Os caminhos do Kokoro já apontam para `./models/` e são resolvidos a partir da
 raiz do repositório — **não use caminhos absolutos** no `.env`.
 
-### 7. Verifique tudo de uma vez
+### 8. Verifique tudo de uma vez
 
 ```bash
 python -m podcast.cli doctor
@@ -301,17 +323,15 @@ podcast/
   stage2_summarize.py  etapa 2 — IMPLEMENTADA
   stage3_script.py   etapa 3 — IMPLEMENTADA
   stage4_audio.py    etapa 4 — IMPLEMENTADA
-  stage5_publish.py  etapa 5 — esqueleto
+  stage5_publish.py  etapa 5 — IMPLEMENTADA
   cli.py             interface de linha de comando
 
-tests/               195 testes; rodam sem rede e sem chave de API. Os que
+tests/               192 testes; rodam sem rede e sem chave de API. Os que
                      exigem numpy/pydub/ffmpeg se auto-pulam na máquina sem GPU
 data/                saída do pipeline (ignorado pelo Git)
+data/public/         mp3 + feed.xml publicados — checkout git da branch gh-pages
 models/              modelos do Kokoro (ignorado pelo Git)
 ```
-
-O esqueleto da etapa 5 não é um arquivo vazio: traz no docstring o plano de
-implementação, a API a usar e as armadilhas conhecidas.
 
 ---
 
