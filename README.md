@@ -25,7 +25,7 @@ listening test behind the `ef_dora` choice, described in [Voice selection](#voic
 No API key, no GPU, no model downloads, no network:
 
 ```bash
-git clone git@github.com:JoaoCarlos134/News_radio.git && cd News_radio
+git clone https://github.com/JoaoCarlos134/News_radio.git && cd News_radio
 pip install -r requirements-dev.txt
 python -m podcast.cli demo
 ```
@@ -86,6 +86,7 @@ A separate test, `TestSemCaminhosAbsolutosNoCodigo`, fails the build if any abso
 ## Cost
 
 The project budget is R$50/month. Only stage 3 costs anything.
+(token costs as of august 2026)
 
 | Model (`SCRIPT_MODEL`) | Per day | Per month | Note |
 |---|---|---|---|
@@ -115,7 +116,7 @@ This runs on one machine: an **NVIDIA GPU with at least 12 GB VRAM** for stages 
 > On 3.13, `pydub` also needs the `audioop-lts` backport — the `audioop` module left the stdlib in 3.13 (PEP 594). It's already in `requirements-audio.txt` with a version marker, so `pip install` resolves it automatically; just don't be surprised by the extra dependency.
 
 ```bash
-git clone git@github.com:JoaoCarlos134/News_radio.git
+git clone https://github.com/JoaoCarlos134/News_radio.git && cd News_radio
 cd News_radio
 py -3.13 -m venv .venv
 .venv\Scripts\activate
