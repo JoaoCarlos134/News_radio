@@ -1,14 +1,19 @@
-"""Etapa 1 — coleta RSS. IMPLEMENTADA.
+"""Stage 1 - RSS collection. IMPLEMENTED.
 
-Nao depende de GPU nem de API paga: roda e e testavel em qualquer maquina.
+Needs neither a GPU nor the paid API: it runs and is testable anywhere.
 
-Fluxo:
-    baixa cada feed -> parseia -> normaliza -> filtra pela janela de tempo
-    -> descarta itens ja vistos em execucoes anteriores -> deduplica
-    -> ordena por recencia -> grava JSON
+Flow:
+    fetch each feed -> parse -> normalise -> filter by the time window
+    -> drop items already seen in previous runs -> deduplicate
+    -> sort by recency -> write JSON
 
-Erro em um feed nunca derruba a coleta: e registrado em `Collection.errors` e o
-resto continua. Um veiculo fora do ar nao pode custar o episodio do dia.
+An error in one feed never takes the collection down: it is recorded in
+`Collection.errors` and the rest continues. One outlet being offline cannot cost
+the day's episode.
+
+Copyright: this stage requests the feed URL and nothing else. There is no
+scraper here, and adding one would change the project's legal position rather
+than merely its data. See _entry_summary.
 """
 
 from __future__ import annotations
@@ -38,14 +43,15 @@ log = logging.getLogger(__name__)
 
 # Alguns veiculos bloqueiam user-agents de biblioteca.
 USER_AGENT = (
-    "Mozilla/5.0 (compatible; PodcastDiarioBot/0.1; uso pessoal, nao comercial)"
+    "Mozilla/5.0 (compatible; PodcastDiarioBot/0.1; personal use, non-commercial)"
 )
 
-# Teto do resumo por item. Manchete + resumo curto e o suficiente para a etapa 2
-# triar, e mantem o contexto do modelo local dentro dos 12GB de VRAM.
+# Ceiling on each item's summary. A headline plus a short summary is enough for
+# stage 2 to triage on, and it keeps the local model's context inside 12 GB of
+# VRAM. It is also the mechanical half of the copyright guarantee.
 MAX_SUMMARY_CHARS = 600
 
-# Acima disto dois titulos sao considerados a mesma noticia.
+# Above this, two titles are considered the same story.
 DUPLICATE_TITLE_THRESHOLD = 0.75
 
 
@@ -54,7 +60,7 @@ DUPLICATE_TITLE_THRESHOLD = 0.75
 # --------------------------------------------------------------------------- #
 
 def fetch_feed(source: FeedSource, timeout: int) -> str:
-    """Baixa o XML cru de um feed. Levanta requests.RequestException em falha."""
+    """Fetch a feed's raw XML. Raises requests.RequestException on failure."""
     response = requests.get(
         source.url,
         timeout=timeout,
@@ -64,17 +70,17 @@ def fetch_feed(source: FeedSource, timeout: int) -> str:
         },
     )
     response.raise_for_status()
-    # feedparser lida melhor com bytes: respeita o encoding declarado no XML,
-    # que nem sempre bate com o header HTTP.
+    # feedparser copes better with bytes: it honours the encoding declared in
+    # the XML, which does not always match the HTTP header.
     return response.content
 
 
 # --------------------------------------------------------------------------- #
-# Parsing (puro — sem rede, testado com fixtures locais)
+# Parsing (pure -- no network, tested against local fixtures)
 # --------------------------------------------------------------------------- #
 
 def _entry_datetime(entry) -> datetime | None:  # noqa: ANN001
-    """Data de publicacao em UTC. feedparser ja converte para struct_time UTC."""
+    """Publication date in UTC. feedparser already converts to a UTC struct_time."""
     for attr in ("published_parsed", "updated_parsed", "created_parsed"):
         parsed = getattr(entry, attr, None)
         if parsed:
@@ -86,10 +92,12 @@ def _entry_datetime(entry) -> datetime | None:  # noqa: ANN001
 
 
 def _entry_summary(entry) -> str:  # noqa: ANN001
-    """Resumo publicado pelo feed, limpo de HTML.
+    """The summary the feed publishes, stripped of HTML.
 
-    Preferimos `summary` a `content`: `content` costuma trazer o artigo inteiro,
-    que nao devemos reproduzir (ver CLAUDE.md, restricao de copyright).
+    We prefer `summary` over `content`: `content` usually carries the whole
+    article, which we must not reproduce (see CLAUDE.md, copyright constraint).
+    This choice, plus the character cap above, is what makes the copyright claim
+    structural rather than aspirational.
     """
     raw = getattr(entry, "summary", "") or getattr(entry, "description", "") or ""
     return truncate(clean_summary(strip_html(raw)), MAX_SUMMARY_CHARS)
@@ -102,15 +110,16 @@ def _entry_categories(entry, source: FeedSource) -> tuple[str, ...]:  # noqa: AN
         for t in tags
         if isinstance(t, dict) and t.get("term")
     )
-    # dict.fromkeys preserva ordem e remove repetidos
+    # dict.fromkeys preserves order and removes repeats
     return tuple(dict.fromkeys(source.categories + from_feed))
 
 
 def parse_feed(source: FeedSource, raw: bytes | str) -> list[NewsItem]:
-    """Converte o XML de um feed em NewsItem normalizados.
+    """Convert a feed's XML into normalised NewsItem objects.
 
-    Funcao pura: recebe bytes, devolve itens. E o ponto de teste da etapa.
-    Entradas sem titulo ou sem link sao descartadas — nao ha o que sintetizar.
+    A pure function: bytes in, items out. This is the stage's test seam.
+    Entries with no title or no link are dropped -- there is nothing to
+    synthesise from them.
     """
     parsed = feedparser.parse(raw)
     items: list[NewsItem] = []
@@ -124,8 +133,9 @@ def parse_feed(source: FeedSource, raw: bytes | str) -> list[NewsItem]:
         canonical = canonical_url(link)
         items.append(
             NewsItem(
-                # O id vem da URL canonica: o mesmo artigo em dois feeds do mesmo
-                # veiculo colapsa em um id so, e ele sobrevive entre execucoes.
+                # The id comes from the canonical URL: the same article in two
+                # feeds of one outlet collapses to a single id, and that id
+                # survives across runs.
                 id=stable_id(canonical or title),
                 source_key=source.key,
                 source_name=source.name,
@@ -141,7 +151,7 @@ def parse_feed(source: FeedSource, raw: bytes | str) -> list[NewsItem]:
 
 
 # --------------------------------------------------------------------------- #
-# Filtros e deduplicacao (puros)
+# Filters and deduplication (pure)
 # --------------------------------------------------------------------------- #
 
 def filter_by_window(
@@ -149,15 +159,15 @@ def filter_by_window(
     window_hours: int,
     now: datetime | None = None,
 ) -> list[NewsItem]:
-    """Mantem apenas itens dentro da janela.
+    """Keep only items inside the window.
 
-    Itens sem data sao mantidos: varios feeds oficiais (BCB, IBGE) omitem
-    pubDate, e descarta-los perderia justamente as fontes primarias. O cache de
-    'ja visto' evita que virem repeticao no dia seguinte.
+    Undated items are kept: several official feeds (BCB, IBGE) omit pubDate, and
+    discarding them would lose exactly the primary sources. The seen-cache is
+    what stops them recurring the next day.
     """
     now = now or datetime.now(timezone.utc)
     cutoff = now - timedelta(hours=window_hours)
-    # Tolerancia para feeds com relogio adiantado.
+    # Tolerance for feeds whose clock runs fast.
     horizon = now + timedelta(hours=6)
     return [
         item for item in items
@@ -166,10 +176,10 @@ def filter_by_window(
 
 
 def deduplicate(items: list[NewsItem]) -> list[NewsItem]:
-    """Remove duplicatas por id/URL e por titulo semelhante.
+    """Remove duplicates by id/URL and by similar title.
 
-    Mantem a primeira ocorrencia. Como os itens chegam ordenados por recencia,
-    a versao preservada e a mais recente.
+    Keeps the first occurrence. Since items arrive sorted by recency, the
+    version preserved is the most recent one.
     """
     kept: list[NewsItem] = []
     seen_ids: set[str] = set()
@@ -192,20 +202,20 @@ def deduplicate(items: list[NewsItem]) -> list[NewsItem]:
 
 
 def sort_items(items: list[NewsItem]) -> list[NewsItem]:
-    """Mais recentes primeiro; itens sem data vao para o fim."""
+    """Most recent first; undated items go to the end."""
     epoch = datetime.min.replace(tzinfo=timezone.utc)
     return sorted(items, key=lambda i: i.published_at or epoch, reverse=True)
 
 
 # --------------------------------------------------------------------------- #
-# Cache de itens ja processados
+# Cache of already-processed items
 # --------------------------------------------------------------------------- #
 
 class SeenStore:
-    """Registra ids ja usados em episodios anteriores.
+    """Records ids already used in previous episodes.
 
-    Sem isso, uma noticia publicada as 23h entra no episodio de hoje e de novo
-    no de amanha, porque continua dentro da janela de 24h.
+    Without this, a story published at 23:00 enters today's episode and
+    tomorrow's as well, because it is still inside the 24-hour window.
     """
 
     def __init__(self, path: Path, retention_days: int = 7) -> None:
@@ -218,7 +228,7 @@ class SeenStore:
             try:
                 self._seen = json.loads(self.path.read_text(encoding="utf-8"))
             except (json.JSONDecodeError, OSError) as exc:
-                # Cache corrompido nao pode impedir a coleta: recomeca vazio.
+                # A corrupt cache must not block collection: restart empty.
                 log.warning("cache 'ja visto' ilegivel (%s), recomecando vazio", exc)
                 self._seen = {}
         self._prune()
@@ -259,7 +269,7 @@ def _safe_parse(value: str) -> datetime | None:
 
 
 # --------------------------------------------------------------------------- #
-# Orquestracao
+# Orchestration
 # --------------------------------------------------------------------------- #
 
 def collect(
@@ -267,11 +277,11 @@ def collect(
     sources: tuple[FeedSource, ...] | None = None,
     seen: SeenStore | None = None,
     now: datetime | None = None,
-    fetcher=fetch_feed,  # noqa: ANN001 — injetavel nos testes
+    fetcher=fetch_feed,  # noqa: ANN001 - injected in tests
 ) -> Collection:
-    """Executa a etapa 1 completa.
+    """Run the whole of stage 1.
 
-    `fetcher` e injetavel para que os testes rodem sem rede.
+    `fetcher` is injected so the tests run without a network.
     """
     sources = sources if sources is not None else enabled_sources()
     now = now or datetime.now(timezone.utc)
@@ -284,16 +294,16 @@ def collect(
         started = time.monotonic()
         try:
             raw = fetcher(source, config.timeout)
-        except Exception as exc:  # rede, DNS, HTTP 4xx/5xx, timeout...
-            log.warning("feed %s falhou: %s", source.key, exc)
+        except Exception as exc:  # network, DNS, HTTP 4xx/5xx, timeout...
+            log.warning("feed %s failed: %s", source.key, exc)
             errors.append(FeedError(source_key=source.key, message=str(exc)))
             stats[source.key] = 0
             continue
 
         try:
             items = parse_feed(source, raw)
-        except Exception as exc:  # XML irrecuperavel
-            log.warning("feed %s nao pode ser parseado: %s", source.key, exc)
+        except Exception as exc:  # unrecoverable XML
+            log.warning("feed %s could not be parsed: %s", source.key, exc)
             errors.append(FeedError(source_key=source.key, message=f"parse: {exc}"))
             stats[source.key] = 0
             continue
@@ -304,7 +314,7 @@ def collect(
         stats[source.key] = len(items)
         all_items.extend(items)
         log.info(
-            "feed %s: %d itens em %.1fs", source.key, len(items),
+            "feed %s: %d items in %.1fs", source.key, len(items),
             time.monotonic() - started,
         )
 
@@ -329,7 +339,7 @@ def collect(
 
 
 def save_collection(collection: Collection, out_dir: Path) -> Path:
-    """Grava o resultado em out_dir/YYYY-MM-DD.json e devolve o caminho."""
+    """Write the result to out_dir/YYYY-MM-DD.json and return the path."""
     out_dir.mkdir(parents=True, exist_ok=True)
     path = out_dir / f"{collection.collected_at.date().isoformat()}.json"
     path.write_text(

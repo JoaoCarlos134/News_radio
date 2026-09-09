@@ -1,13 +1,21 @@
-"""Etapa 3 — sintese do roteiro via API paga. IMPLEMENTADA.
+"""Stage 3 - script synthesis via the paid API. IMPLEMENTED.
 
-Nao depende de GPU: e a unica etapa paga e a unica que pode ser testada de
-verdade na maquina de desenvolvimento (basta ANTHROPIC_API_KEY).
+Needs no GPU. It is the only stage that costs money and the only one that can
+be exercised for real anywhere, given just an ANTHROPIC_API_KEY.
 
-Recebe o Digest da etapa 2 e devolve um Script: dialogo entre Maria e Pedro.
-E aqui que entra a analise de verdade — o modelo local so fez triagem.
+Takes stage 2's Digest and returns a Script: a dialogue between Maria and
+Pedro. This is where the actual analysis happens -- the local model only did
+triage.
 
-Copyright: o prompt exige sintese em linguagem propria a partir dos resumos.
-Reproduzir trecho de artigo original e proibido (ver CLAUDE.md).
+Copyright: the prompt requires synthesis in the model's own words from the
+summaries. Reproducing any span of an original article is forbidden (see
+CLAUDE.md). Note that this is a prompt instruction, not a verified invariant;
+the mechanical half of the guarantee lives in stage 1, which never fetches
+article bodies at all.
+
+Note on language: SYSTEM_PROMPT, the SCRIPT_SCHEMA descriptions and the string
+built by build_user_prompt are prompt text for a Portuguese-language podcast.
+They stay in Portuguese; translating them would change the product.
 """
 
 from __future__ import annotations
@@ -22,21 +30,21 @@ from .models import Digest, Script, ScriptLine, SummarizedItem
 
 log = logging.getLogger(__name__)
 
-# Ritmo de leitura do Kokoro em PT-BR, usado para converter minutos em palavras.
+# Kokoro's pt-BR reading pace, used to convert minutes into words.
 #
-# MEDIDO num episodio inteiro de verdade: 3227 palavras em 75 falas (94 trechos
-# depois da quebra por frase) deram 18,74 min de mp3 — 172 palavras/min.
+# MEASURED on a complete real episode: 3227 words across 75 lines (94 segments
+# after sentence splitting) produced 18.74 min of mp3 -- 172 words/min.
 #
-# O numero cai conforme a amostra cresce, e por isso a medicao boa e a do
-# episodio completo:
-#     bloco unico de texto ......... 202 pal/min  (sem pausa, sem entonacao final)
-#     dialogo de 11 falas .......... 177 pal/min
-#     episodio de 75 falas ......... 172 pal/min  <- este
-# Cada fala adiciona pausa e uma cadencia de fim de frase; quanto mais falas,
-# mais lento o conjunto. Com 195 o teto de 30 min entregava 33 min reais.
+# The figure falls as the sample grows, which is why only the full-episode
+# measurement counts:
+#     one continuous block ......... 202 wpm  (no pauses, no closing intonation)
+#     11-line dialogue ............. 177 wpm
+#     75-line episode .............. 172 wpm  <- this one
+# Every line adds a pause and an end-of-sentence cadence, so the more lines, the
+# slower the whole. At 195 the "30 min" ceiling was delivering a real 33 min.
 #
-# Depende de KOKORO_SPEED e de KOKORO_GAP_MS — mexeu neles, remeça, e remeça
-# num episodio completo, nao numa amostra curta.
+# Depends on KOKORO_SPEED and KOKORO_GAP_MS -- change either and re-measure, on
+# a complete episode rather than a short sample.
 WORDS_PER_MINUTE = 172
 
 SYSTEM_PROMPT = """\
@@ -113,10 +121,10 @@ próprias palavras. Nunca reproduza frases dos resumos originais literalmente.\
 
 
 def _supports_adaptive_thinking(model: str) -> bool:
-    """Modelos 4.6+ usam thinking adaptativo e o parametro `effort`.
+    """Models 4.6+ use adaptive thinking and the `effort` parameter.
 
-    Modelos mais antigos (ex.: haiku-4-5) rejeitam esses campos, entao a escolha
-    do modelo por env var precisa ajustar o request.
+    Older models (haiku-4-5, for instance) reject those fields, so choosing the
+    model through an env var has to adjust the request too.
     """
     modern = ("claude-opus-5", "claude-opus-4-6", "claude-opus-4-7",
               "claude-opus-4-8", "claude-sonnet-5", "claude-sonnet-4-6",
@@ -124,8 +132,8 @@ def _supports_adaptive_thinking(model: str) -> bool:
     return any(model.startswith(prefix) for prefix in modern)
 
 
-# Esquema de saida: garante que a resposta ja venha como falas estruturadas,
-# sem precisar parsear texto livre.
+# Output schema: guarantees the response arrives as structured lines, with no
+# free text to parse back.
 SCRIPT_SCHEMA = {
     "type": "object",
     "properties": {
@@ -157,12 +165,12 @@ SCRIPT_SCHEMA = {
 
 
 def minutes_to_words(minutes: int) -> int:
-    """Duracao falada -> numero de palavras, no ritmo medido do Kokoro."""
+    """Spoken duration -> word count, at Kokoro's measured pace."""
     return minutes * WORDS_PER_MINUTE
 
 
 def estimate_minutes(word_count: int) -> float:
-    """Numero de palavras -> duracao falada estimada."""
+    """Word count -> estimated spoken duration."""
     return word_count / WORDS_PER_MINUTE
 
 
@@ -172,7 +180,7 @@ def build_user_prompt(
     target_minutes: int,
     max_minutes: int = 30,
 ) -> str:
-    """Monta o prompt com os resumos filtrados da etapa 2."""
+    """Build the prompt from stage 2's filtered summaries."""
     target_words = minutes_to_words(target_minutes)
     max_words = minutes_to_words(max_minutes)
 
@@ -187,9 +195,9 @@ def build_user_prompt(
 
     temas = ", ".join(digest.themes) if digest.themes else "(não pré-identificados)"
 
-    # Decomposicao explicita: pedir so o total faz o modelo entregar metade.
-    # Com o orcamento por tema ele tem como conferir o proprio tamanho enquanto
-    # escreve, em vez de estimar 4 mil palavras de cabeca.
+    # Explicit decomposition: asking for the total alone makes the model
+    # deliver about half. Given a per-theme budget it can check its own length
+    # while writing, instead of estimating four thousand words in its head.
     palavras_por_tema = target_words // 5
 
     return (
@@ -217,19 +225,19 @@ def generate_script(
     digest: Digest,
     config: ScriptConfig,
     episode_date: str | None = None,
-    client=None,  # noqa: ANN001 — injetavel nos testes
+    client=None,  # noqa: ANN001 - injected in tests
 ) -> Script:
-    """Chama a API paga e devolve o roteiro estruturado.
+    """Call the paid API and return the structured script.
 
-    `client` e injetavel para que os testes rodem sem chave e sem rede.
+    `client` is injected so the tests run with no key and no network.
     """
     if not digest.items:
-        raise ValueError("digest vazio: nada para transformar em roteiro")
+        raise ValueError("empty digest: nothing to turn into a script")
 
     episode_date = episode_date or datetime.now(timezone.utc).date().isoformat()
 
     if client is None:
-        import anthropic  # import tardio: so quem roda a etapa 3 precisa do pacote
+        import anthropic  # late import: only stage 3 needs the package
 
         client = anthropic.Anthropic(api_key=config.require_api_key())
 
@@ -249,53 +257,53 @@ def generate_script(
         request["thinking"] = {"type": "adaptive"}
         request["output_config"]["effort"] = config.effort
 
-    log.info("gerando roteiro com %s (%d notícias)", config.model, len(digest.items))
+    log.info("generating script with %s (%d items)", config.model, len(digest.items))
     response = client.messages.create(**request)
 
     if getattr(response, "stop_reason", None) == "refusal":
         raise RuntimeError(
-            "a API recusou a geração do roteiro "
-            f"(stop_reason=refusal, detalhes={getattr(response, 'stop_details', None)})"
+            "the API refused to generate the script "
+            f"(stop_reason=refusal, details={getattr(response, 'stop_details', None)})"
         )
     if getattr(response, "stop_reason", None) == "max_tokens":
         raise RuntimeError(
-            "roteiro truncado: aumente SCRIPT_MAX_TOKENS "
-            f"(atual: {config.max_tokens})"
+            "script truncated: raise SCRIPT_MAX_TOKENS "
+            f"(currently: {config.max_tokens})"
         )
 
     script = parse_script_response(response, episode_date, config.model)
 
-    # O modelo controla o tamanho por contagem de palavras, que e aproximada.
-    # Um episodio um pouco longo nao justifica perder a execucao da madrugada —
-    # mas tem de aparecer no log, porque e o sinal de que o prompt precisa de
-    # ajuste. A etapa 4 loga a duracao real depois.
+    # The model controls length by word count, which is approximate. A slightly
+    # long episode does not justify losing the overnight run -- but it has to
+    # show up in the log, because that is the signal the prompt needs adjusting.
+    # Stage 4 logs the real duration afterwards.
     duracao = estimate_minutes(script.word_count)
     if duracao > config.max_minutes:
         log.warning(
-            "roteiro estimado em %.1f min, acima do teto de %d min "
-            "(%d palavras). Episódio será gerado assim mesmo; se repetir, "
-            "reduza SCRIPT_TARGET_MINUTES ou MAX_ITEMS_TO_STAGE3.",
+            "script estimated at %.1f min, above the %d min ceiling "
+            "(%d words). The episode will be generated anyway; if this repeats, "
+            "lower SCRIPT_TARGET_MINUTES or MAX_ITEMS_TO_STAGE3.",
             duracao, config.max_minutes, script.word_count,
         )
     else:
-        log.info("roteiro de %d palavras (~%.1f min)", script.word_count, duracao)
+        log.info("script of %d words (~%.1f min)", script.word_count, duracao)
 
     return script
 
 
 def parse_script_response(response, episode_date: str, model: str) -> Script:  # noqa: ANN001
-    """Extrai o Script do payload JSON devolvido pela API."""
+    """Extract the Script from the JSON payload the API returned."""
     text = next(
         (block.text for block in response.content if getattr(block, "type", None) == "text"),
         None,
     )
     if not text:
-        raise RuntimeError("resposta da API sem bloco de texto")
+        raise RuntimeError("API response has no text block")
 
     try:
         data = json.loads(text)
     except json.JSONDecodeError as exc:
-        raise RuntimeError(f"resposta da API não é JSON válido: {exc}") from exc
+        raise RuntimeError(f"API response is not valid JSON: {exc}") from exc
 
     lines = [
         ScriptLine(speaker=line["speaker"], text=line["text"].strip())
@@ -303,11 +311,11 @@ def parse_script_response(response, episode_date: str, model: str) -> Script:  #
         if line.get("text", "").strip()
     ]
     if not lines:
-        raise RuntimeError("a API devolveu um roteiro sem falas")
+        raise RuntimeError("the API returned a script with no lines")
 
     invalidos = {line.speaker for line in lines} - {"Maria", "Pedro"}
     if invalidos:
-        raise RuntimeError(f"falas com locutor desconhecido: {sorted(invalidos)}")
+        raise RuntimeError(f"lines with unknown speaker: {sorted(invalidos)}")
 
     return Script(
         generated_at=datetime.now(timezone.utc),
@@ -334,11 +342,11 @@ def load_script(path: Path) -> Script:
 
 
 def digest_from_collection_file(path: Path) -> Digest:
-    """Atalho de desenvolvimento: monta um Digest direto da saida da etapa 1.
+    """Development shortcut: build a Digest straight from stage 1's output.
 
-    Permite exercitar a etapa 3 nesta maquina sem o Ollama da etapa 2. A
-    qualidade e pior (sem triagem nem extracao de temas) — e ferramenta de teste,
-    nao caminho de producao.
+    Lets stage 3 be exercised without stage 2's Ollama. Quality is worse, with
+    no triage and no theme extraction -- this is a testing tool, not the
+    production path.
     """
     from .stage1_collect import load_collection
 

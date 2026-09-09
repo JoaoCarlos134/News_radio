@@ -1,8 +1,8 @@
-"""Modelos de dados trocados entre as etapas do pipeline.
+"""Data models exchanged between the pipeline stages.
 
-Cada etapa le um JSON produzido pela anterior e escreve o proprio. Isso permite
-rodar/testar etapas isoladamente e inspecionar o resultado intermediario — util
-porque as etapas 2 e 4 so rodam no PC com GPU.
+Each stage reads a JSON produced by the previous one and writes its own. That
+allows any stage to be run and tested in isolation and its intermediate result
+inspected -- useful because stages 2 and 4 only run where the GPU is.
 """
 
 from __future__ import annotations
@@ -24,16 +24,16 @@ def _parse_iso(value: str | None) -> datetime | None:
 
 
 # --------------------------------------------------------------------------- #
-# Etapa 1 — coleta
+# Stage 1 - collection
 # --------------------------------------------------------------------------- #
 
 @dataclass(frozen=True)
 class NewsItem:
-    """Uma noticia bruta vinda de um feed RSS.
+    """A raw news item from an RSS feed.
 
-    `summary` e sempre o resumo/manchete publicado pelo proprio feed — nunca o
-    texto integral do artigo. O pipeline sintetiza a partir daqui (ver CLAUDE.md,
-    restricao de copyright).
+    `summary` is always the summary or headline the feed itself published, never
+    the full article text. The pipeline synthesises from here (see CLAUDE.md,
+    copyright constraint).
     """
 
     id: str
@@ -67,7 +67,7 @@ class NewsItem:
 
 @dataclass(frozen=True)
 class FeedError:
-    """Falha em um feed especifico. Nunca aborta a coleta inteira."""
+    """A failure in one specific feed. Never aborts the whole collection."""
 
     source_key: str
     message: str
@@ -78,7 +78,7 @@ class FeedError:
 
 @dataclass
 class Collection:
-    """Resultado completo da etapa 1."""
+    """The complete result of stage 1."""
 
     collected_at: datetime
     window_hours: int
@@ -107,12 +107,12 @@ class Collection:
 
 
 # --------------------------------------------------------------------------- #
-# Etapa 2 — resumo/triagem local (Ollama)
+# Stage 2 - local summarise/triage (Ollama)
 # --------------------------------------------------------------------------- #
 
 @dataclass(frozen=True)
 class SummarizedItem:
-    """Noticia depois da limpeza/triagem do modelo local."""
+    """An item after the local model's cleanup and triage."""
 
     item_id: str
     title: str
@@ -132,7 +132,7 @@ class SummarizedItem:
 
 @dataclass
 class Digest:
-    """Resultado da etapa 2: itens filtrados + temas do dia."""
+    """The result of stage 2: filtered items plus the day's themes."""
 
     generated_at: datetime
     themes: list[str] = field(default_factory=list)
@@ -155,7 +155,7 @@ class Digest:
 
 
 # --------------------------------------------------------------------------- #
-# Etapa 3 — roteiro
+# Stage 3 - script
 # --------------------------------------------------------------------------- #
 
 SPEAKERS = ("Maria", "Pedro")
@@ -163,7 +163,7 @@ SPEAKERS = ("Maria", "Pedro")
 
 @dataclass(frozen=True)
 class ScriptLine:
-    """Uma fala do dialogo. `speaker` deve estar em SPEAKERS."""
+    """One line of the dialogue. `speaker` must be in SPEAKERS."""
 
     speaker: str
     text: str
@@ -174,7 +174,7 @@ class ScriptLine:
 
 @dataclass
 class Script:
-    """Roteiro completo do episodio."""
+    """The complete episode script."""
 
     generated_at: datetime
     episode_date: str  # YYYY-MM-DD, no fuso do usuario

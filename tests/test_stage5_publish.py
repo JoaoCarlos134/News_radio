@@ -271,7 +271,7 @@ class TestPublishEpisode:
 class TestDefaultPusher:
     def test_sem_checkout_git_e_erro(self, tmp_path):
         # tmp_path nao tem .git — nao pode ser uma branch do GitHub Pages.
-        with pytest.raises(ConfigError, match="checkout git"):
+        with pytest.raises(ConfigError, match="git checkout"):
             default_pusher(tmp_path, "mensagem")
 
 

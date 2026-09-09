@@ -1,16 +1,16 @@
-# Dependencias de AUDIO — etapa 4 (Kokoro TTS local).
-# Instale APENAS na maquina com a RTX 4070. Na maquina sem GPU nao instale:
-# baixa modelos pesados e nao roda sem GPU/ffmpeg.
+# AUDIO dependencies - stage 4 (local Kokoro TTS).
+# Not installed by CI or by a test-only setup: they pull heavy runtimes and do
+# nothing useful without a GPU and ffmpeg.
 #
-# Pre-requisitos: ffmpeg no PATH (pydub exporta mp3 por ele) e Python <3.14
-# (kokoro-onnx declara Requires-Python >=3.10,<3.14).
+# Prerequisites: ffmpeg on PATH (pydub shells out to it to export mp3) and
+# Python <3.14 (kokoro-onnx declares Requires-Python >=3.10,<3.14).
 
-kokoro-onnx>=0.4.9      # TTS local, Apache 2.0, vozes PT-BR
-onnxruntime-gpu>=1.20.0 # runtime CUDA; troque por `onnxruntime` para rodar em CPU
-soundfile>=0.12.1       # leitura/escrita dos samples gerados pelo Kokoro
-pydub>=0.25.1           # concatenacao das falas e export para mp3
-numpy>=1.26.0
+kokoro-onnx>=0.4.9,<1      # local TTS, Apache 2.0, has pt-BR voices
+onnxruntime-gpu>=1.20.0,<2 # CUDA runtime; swap for `onnxruntime` to run on CPU
+soundfile>=0.12.1,<1       # reads/writes the samples Kokoro produces
+pydub>=0.25.1,<1           # concatenates the lines and exports mp3
+numpy>=1.26.0,<3
 
-# O pydub importa `audioop`, removido da stdlib no Python 3.13 (PEP 594).
-# Este backport devolve o modulo; sem ele o `import pydub` falha.
-audioop-lts>=0.2.1; python_version >= "3.13"
+# pydub imports `audioop`, removed from the stdlib in Python 3.13 (PEP 594).
+# This backport restores it; without it `import pydub` fails outright.
+audioop-lts>=0.2.1,<1; python_version >= "3.13"

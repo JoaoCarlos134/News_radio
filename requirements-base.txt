@@ -1,8 +1,14 @@
-# Dependencias que rodam em QUALQUER maquina (sem GPU).
-# Etapas 1 (RSS), 3 (API paga) e 5 (feed RSS).
+# Dependencies that run anywhere, with no GPU.
+# Stages 1 (RSS), 3 (paid API) and 5 (RSS feed).
+#
+# Upper bounds are the next MAJOR above the version this project is actually
+# tested against, not the next minor: a tighter pin would exclude versions that
+# demonstrably work. `anthropic` is the one to watch -- it is still 0.x, so a
+# minor bump there can break, and <1 is a floor on the blast radius, not a
+# promise.
 
-feedparser>=6.0.11      # etapa 1 — parsing de RSS/Atom
-requests>=2.32.0        # etapa 1 (download dos feeds) e etapa 2 (HTTP do Ollama)
-python-dotenv>=1.0.1    # carregar .env
-anthropic>=0.69.0       # etapa 3 — API paga (sintese do roteiro)
-feedgen>=1.0.0          # etapa 5 — geracao do feed RSS do podcast
+feedparser>=6.0.11,<7      # stage 1 - RSS/Atom parsing
+requests>=2.32.0,<3        # stage 1 (feed download) and stage 2 (Ollama HTTP)
+python-dotenv>=1.0.1,<2    # loads .env
+anthropic>=0.69.0,<1       # stage 3 - paid API (script synthesis)
+feedgen>=1.0.0,<2          # stage 5 - podcast RSS feed generation

@@ -1,9 +1,9 @@
-"""Configuracao central, lida de variaveis de ambiente (.env).
+"""Central configuration, read from environment variables (.env).
 
-Regra do projeto: nenhum caminho absoluto de nenhuma das maquinas pode vazar para
-o codigo. Tudo que e caminho de arquivo e resolvido em relacao a raiz do
-repositorio, de modo que clonar o repo em qualquer uma das duas funcione sem
-editar nada alem do .env.
+Project rule: no absolute path from any machine may leak into the code. Every
+file path is resolved relative to the repository root, so that cloning the repo
+anywhere works without editing anything but the .env. TestSemCaminhosAbsolutosNoCodigo
+fails the build if that rule is broken.
 """
 
 from __future__ import annotations
@@ -19,12 +19,12 @@ except ImportError:  # pragma: no cover
         return False
 
 
-# Raiz do repositorio = pasta que contem este pacote.
+# Repository root = the directory containing this package.
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 
 def _resolve(value: str) -> Path:
-    """Resolve um caminho do .env em relacao a raiz do repo (se for relativo)."""
+    """Resolve a path from .env against the repo root, if it is relative."""
     path = Path(value).expanduser()
     return path if path.is_absolute() else (PROJECT_ROOT / path).resolve()
 
@@ -39,7 +39,7 @@ def _env_int(key: str, default: int) -> int:
     try:
         return int(raw)
     except ValueError as exc:
-        raise ConfigError(f"{key} deve ser um inteiro, recebi {raw!r}") from exc
+        raise ConfigError(f"{key} must be an integer, got {raw!r}") from exc
 
 
 def _env_float(key: str, default: float) -> float:
@@ -47,16 +47,16 @@ def _env_float(key: str, default: float) -> float:
     try:
         return float(raw)
     except ValueError as exc:
-        raise ConfigError(f"{key} deve ser um numero, recebi {raw!r}") from exc
+        raise ConfigError(f"{key} must be a number, got {raw!r}") from exc
 
 
 class ConfigError(RuntimeError):
-    """Configuracao ausente ou invalida."""
+    """Missing or invalid configuration."""
 
 
 @dataclass(frozen=True)
 class CollectConfig:
-    """Etapa 1 — coleta RSS."""
+    """Stage 1 - RSS collection."""
 
     window_hours: int = 24
     timeout: int = 20
@@ -66,7 +66,7 @@ class CollectConfig:
 
 @dataclass(frozen=True)
 class OllamaConfig:
-    """Etapa 2 — resumo/triagem local. Exige Ollama rodando no PC de destino."""
+    """Stage 2 - local summarise/triage. Needs Ollama running on the host."""
 
     base_url: str = "http://localhost:11434"
     model: str = "qwen2.5:14b-instruct-q4_K_M"
@@ -75,29 +75,29 @@ class OllamaConfig:
 
 @dataclass(frozen=True)
 class ScriptConfig:
-    """Etapa 3 — sintese do roteiro via API paga."""
+    """Stage 3 - script synthesis via the paid API."""
 
     api_key: str = ""
     model: str = "claude-sonnet-5"
     max_tokens: int = 16000
     effort: str = "high"
     target_minutes: int = 22
-    # Teto rigido de duracao do episodio. O alvo fica abaixo dele de proposito:
-    # o modelo erra o tamanho para os dois lados, e estourar o teto e pior.
+    # Hard ceiling on episode duration. The target sits below it deliberately:
+    # the model misses the length in both directions, and overshooting is worse.
     max_minutes: int = 30
 
     def require_api_key(self) -> str:
         if not self.api_key:
             raise ConfigError(
-                "ANTHROPIC_API_KEY nao definida. Copie .env.example para .env e "
-                "preencha a chave (https://console.anthropic.com/settings/keys)."
+                "ANTHROPIC_API_KEY is not set. Copy .env.example to .env and fill "
+                "in the key (https://console.anthropic.com/settings/keys)."
             )
         return self.api_key
 
 
 @dataclass(frozen=True)
 class AudioConfig:
-    """Etapa 4 — TTS local com Kokoro."""
+    """Stage 4 - local TTS with Kokoro."""
 
     model_path: Path = field(default_factory=lambda: PROJECT_ROOT / "models" / "kokoro-v1.0.onnx")
     voices_path: Path = field(default_factory=lambda: PROJECT_ROOT / "models" / "voices-v1.0.bin")
@@ -111,15 +111,15 @@ class AudioConfig:
         if faltando:
             listados = "\n  ".join(str(p) for p in faltando)
             raise ConfigError(
-                "Arquivos do modelo Kokoro nao encontrados:\n  "
+                "Kokoro model files not found:\n  "
                 f"{listados}\n"
-                "Baixe-os na maquina com a RTX 4070 (ver README, 'Setup B')."
+                "Download them into models/ (see README, 'Kokoro TTS')."
             )
 
 
 @dataclass(frozen=True)
 class PublishConfig:
-    """Etapa 5 — feed RSS privado."""
+    """Stage 5 - private RSS feed."""
 
     base_url: str = ""
     title: str = "Economia e Geopolitica — Diario"
@@ -138,7 +138,7 @@ class Config:
     audio: AudioConfig
     publish: PublishConfig
 
-    # Subpastas derivadas de data_dir. Criadas sob demanda, nao no import.
+    # Subdirectories derived from data_dir. Created on demand, not at import.
     @property
     def raw_dir(self) -> Path:
         return self.data_dir / "raw"
@@ -157,7 +157,7 @@ class Config:
 
     @property
     def public_dir(self) -> Path:
-        """Pasta publicada (mp3 + feed.xml) no GitHub Pages / R2."""
+        """The published folder (mp3 + feed.xml) on GitHub Pages / R2."""
         return self.data_dir / "public"
 
     @property
@@ -166,10 +166,10 @@ class Config:
 
 
 def load_config(env_file: Path | None = None) -> Config:
-    """Le o .env (se existir) e monta a configuracao.
+    """Read the .env, if present, and assemble the configuration.
 
-    Nao levanta erro por chave de API ausente: cada etapa valida o que precisa,
-    para que a etapa 1 rode sem nenhuma credencial configurada.
+    Does not raise on a missing API key: each stage validates what it needs, so
+    that stage 1 runs with no credentials configured at all.
     """
     load_dotenv(env_file or (PROJECT_ROOT / ".env"), override=False)
 

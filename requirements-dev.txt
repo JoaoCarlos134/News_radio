@@ -1,7 +1,9 @@
-# Ambiente de DESENVOLVIMENTO (maquina sem GPU).
-# Nao inclui requirements-audio.txt de proposito: Kokoro/onnxruntime nao sao
-# necessarios para escrever ou testar o codigo aqui.
+# DEVELOPMENT environment, and what CI installs.
+# Deliberately excludes requirements-audio.txt: Kokoro and onnxruntime are not
+# needed to write or test the code, and leaving them out is what proves the
+# suite runs without a GPU. The stage 4 tests skip themselves via
+# pytest.importorskip when they are absent.
 
 -r requirements-base.txt
 
-pytest>=8.3.0
+pytest>=8.3.0,<10

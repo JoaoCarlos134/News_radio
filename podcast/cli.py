@@ -119,8 +119,8 @@ def cmd_sources(config: Config, args: argparse.Namespace) -> int:
 def cmd_collect(config: Config, args: argparse.Namespace) -> int:
     from .stage1_collect import SeenStore, collect, save_collection
 
-    # getattr com padrao: `run` reaproveita estes comandos com o proprio
-    # Namespace, que nao tem as flags especificas de cada subcomando.
+    # getattr with a default: `run` reuses these commands with its own
+    # Namespace, which lacks each subcommand's specific flags.
     dry_run = getattr(args, "dry_run", False)
     ignore_seen = getattr(args, "ignore_seen", False)
 

@@ -1,11 +1,11 @@
-"""Pipeline do podcast diario de economia e geopolitica.
+"""Daily economy and geopolitics podcast pipeline.
 
-Etapas (ver CLAUDE.md):
-    1. coleta   — RSS via feedparser              (grátis, roda em qualquer maquina)
-    2. resumo   — Ollama local na RTX 4070        (grátis, exige GPU)
-    3. roteiro  — API paga (Anthropic)            (pago, roda em qualquer maquina)
-    4. audio    — Kokoro TTS local + pydub        (grátis, exige o modelo baixado)
-    5. entrega  — feed RSS privado                (grátis)
+Stages (see CLAUDE.md):
+    1. collect    - RSS via feedparser        (free, runs anywhere)
+    2. summarise  - local Ollama              (free, needs a GPU)
+    3. script     - paid API (Anthropic)      (PAID, runs anywhere)
+    4. audio      - local Kokoro TTS + pydub  (free, needs the model files)
+    5. publish    - private RSS feed          (free, runs anywhere)
 """
 
 __version__ = "0.1.0"

@@ -1,31 +1,37 @@
-"""Etapa 2 — resumo e triagem com Ollama local. IMPLEMENTADA.
+"""Stage 2 - summarisation and triage with local Ollama. IMPLEMENTED.
 
-EXIGE GPU para EXECUTAR: so roda na maquina com a RTX 4070, com Ollama no ar e o
-modelo baixado. Desenvolver e testar esta etapa funciona nas duas maquinas — os
-testes usam o `client` injetado e nao falam com o Ollama.
+REQUIRES a GPU to EXECUTE: it runs only where Ollama is up and the model is
+pulled. Developing and testing this stage works anywhere -- the tests use the
+injected `client` and never speak to Ollama.
 
-O que esta etapa faz (e o que NAO faz):
-    FAZ  — resume cada noticia bruta em 1-2 frases, descarta irrelevantes e
-           duplicatas semanticas, atribui um tema e uma nota de relevancia,
-           e extrai os 3-5 temas do dia.
-    NAO FAZ — analise. Isso e da etapa 3, com o modelo forte. Aqui e limpeza e
-           triagem: barato, local, e reduz o volume que vai para a API paga.
+What this stage does (and does NOT do):
+    DOES  - summarise each raw item in 1-2 sentences, discard irrelevant and
+            semantically duplicate ones, assign a theme and a relevance score,
+            and extract the day's 3-5 themes.
+    DOES NOT - analysis. That is stage 3's job, with the strong model. This is
+            cleanup and triage: cheap, local, and it cuts the volume that
+            reaches the paid API.
 
-Fluxo:
-    coleta -> lotes de BATCH_SIZE itens -> uma chamada ao modelo local por lote
-    -> deduplicacao semantica entre lotes -> corte por relevancia
-    -> uma chamada final para extrair os temas do dia -> Digest
+Flow:
+    collection -> batches of BATCH_SIZE items -> one local-model call per batch
+    -> semantic deduplication across batches -> relevance cutoff
+    -> one final call to extract the day's themes -> Digest
 
-Robustez (modelo pequeno erra formato; o pipeline roda de madrugada sem ninguem
-olhando):
-    - lote que falha (timeout, JSON quebrado) e descartado com log, nao derruba
-      a etapa. So se TODOS os lotes falharem e que a etapa levanta erro;
-    - item cujo objeto nao parseia e ignorado, o resto do lote sobrevive;
-    - a extracao de temas e best-effort: sem temas o Digest ainda serve, a
-      etapa 3 sabe lidar com `themes` vazio.
+Robustness (a small model gets the format wrong, and the pipeline runs overnight
+with nobody watching):
+    - a failed batch (timeout, broken JSON) is dropped with a log rather than
+      taking the stage down. Only if EVERY batch fails does the stage raise;
+    - an item whose object will not parse is skipped, and the rest of the batch
+      survives;
+    - theme extraction is best-effort: with no themes the Digest is still
+      usable, and stage 3 handles an empty `themes`.
 
-Os itens sao referenciados por indice dentro do lote (1, 2, 3...), nao pelo id
-real: modelos pequenos truncam e inventam digitos em hashes de 16 caracteres.
+Items are referenced by their index within the batch (1, 2, 3...), never by
+their real id: small models truncate and invent digits in 16-character hashes.
+
+Note on language: SUMMARIZE_PROMPT and THEMES_PROMPT stay in Portuguese. They
+instruct a model whose output has to be Portuguese, and so do the alternative
+JSON key names accepted in _as_item_list.
 """
 
 from __future__ import annotations
@@ -71,38 +77,38 @@ texto ao redor.
 BATCH_SIZE = 8
 MAX_ITEMS_TO_STAGE3 = 15
 
-# Abaixo disto o item nao paga o token que gastaria na etapa 3.
+# Below this an item does not repay the tokens it would cost in stage 3.
 MIN_RELEVANCE = 3
 
-# Teto do resumo devolvido pelo modelo. Ele foi instruido a escrever 1-2 frases;
-# quando desobedece e despeja um paragrafo, o custo cai na etapa 3.
+# Ceiling on the summary the model returns. It was told to write 1-2 sentences;
+# when it disobeys and dumps a paragraph, stage 3 pays for it.
 MAX_SUMMARY_CHARS = 400
 
-# Acima disto dois itens de lotes diferentes sao a mesma noticia. Mais frouxo
-# que o limiar da etapa 1 (0.75) porque aqui os titulos ja passaram por aquele
-# filtro: o que sobra e duplicata com manchete bem diferente.
+# Above this, two items from different batches are the same story. Looser than
+# stage 1's threshold (0.75) because these titles already passed that filter:
+# what survives here are duplicates whose headlines differ considerably.
 DUPLICATE_TITLE_THRESHOLD = 0.6
 
-# Temperatura baixa: aqui o modelo classifica e resume, nao cria.
+# Low temperature: here the model classifies and summarises, it does not create.
 TEMPERATURE = 0.2
 
 
 # --------------------------------------------------------------------------- #
-# Cliente do Ollama
+# Ollama client
 # --------------------------------------------------------------------------- #
 
 class OllamaClient:
-    """Wrapper minimo sobre POST /api/generate.
+    """Minimal wrapper over POST /api/generate.
 
-    Sem SDK proprio de proposito: `requests` ja e dependencia da etapa 1, e uma
-    unica funcao `generate` e o que os testes precisam substituir.
+    No dedicated SDK on purpose: `requests` is already a stage 1 dependency, and
+    a single `generate` function is all the tests need to substitute.
     """
 
     def __init__(self, config: OllamaConfig) -> None:
         self.config = config
 
     def generate(self, prompt: str, system: str = "") -> str:
-        """Devolve o texto cru da resposta do modelo."""
+        """Return the raw text of the model's response."""
         import requests
 
         payload = {
@@ -125,21 +131,21 @@ class OllamaClient:
 
 
 # --------------------------------------------------------------------------- #
-# Parsing tolerante (puro — o grosso dos testes mora aqui)
+# Tolerant parsing (pure -- most of the test suite lives here)
 # --------------------------------------------------------------------------- #
 
 _FENCE = re.compile(r"^\s*```(?:json)?\s*|\s*```\s*$", re.IGNORECASE)
 
 
 def extract_json(raw: str):
-    """Extrai o primeiro objeto/array JSON de uma resposta do modelo local.
+    """Extract the first JSON object/array from a local-model response.
 
-    Mesmo com `format: json` o Ollama as vezes devolve o JSON embrulhado em
-    cerca de markdown ou precedido de uma frase. Levanta ValueError se nao
-    houver JSON aproveitavel.
+    Even with `format: json`, Ollama sometimes wraps the JSON in a markdown
+    fence or prefixes it with a sentence. Raises ValueError if there is no
+    usable JSON.
     """
     if not raw or not raw.strip():
-        raise ValueError("resposta vazia do modelo local")
+        raise ValueError("empty response from the local model")
 
     text = _FENCE.sub("", raw.strip())
 
@@ -148,7 +154,7 @@ def extract_json(raw: str):
     except json.JSONDecodeError:
         pass
 
-    # Recorte entre o primeiro delimitador de abertura e o ultimo de fechamento.
+    # Slice between the first opening delimiter and the last closing one.
     for abre, fecha in (("{", "}"), ("[", "]")):
         inicio, fim = text.find(abre), text.rfind(fecha)
         if inicio != -1 and fim > inicio:
@@ -157,11 +163,11 @@ def extract_json(raw: str):
             except json.JSONDecodeError:
                 continue
 
-    raise ValueError(f"resposta do modelo nao e JSON: {truncate(text, 200)!r}")
+    raise ValueError(f"local model response is not JSON: {truncate(text, 200)!r}")
 
 
 def _as_item_list(data) -> list[dict]:
-    """Normaliza as formas que o modelo usa para devolver a lista de itens."""
+    """Normalise the shapes the model uses to return the item list."""
     if isinstance(data, list):
         return [d for d in data if isinstance(d, dict)]
     if isinstance(data, dict):
@@ -169,14 +175,14 @@ def _as_item_list(data) -> list[dict]:
             valor = data.get(chave)
             if isinstance(valor, list):
                 return [d for d in valor if isinstance(d, dict)]
-        # Objeto unico com cara de item (lote de 1 item).
+        # A single object that looks like an item (a batch of one).
         if "summary" in data:
             return [data]
     return []
 
 
 def _coerce_index(value, tamanho_do_lote: int) -> int | None:
-    """Converte a referencia do item para indice 0-based, ou None se invalida."""
+    """Convert the item reference to a 0-based index, or None if invalid."""
     if isinstance(value, bool):
         return None
     if isinstance(value, str):
@@ -192,7 +198,7 @@ def _coerce_index(value, tamanho_do_lote: int) -> int | None:
 
 
 def _coerce_relevance(value) -> int:
-    """Nota 0-10. Modelo que devolve "8/10", 8.5 ou lixo nao pode quebrar o lote."""
+    """Score 0-10. A model returning "8/10", 8.5 or junk must not break the batch."""
     if isinstance(value, bool) or value is None:
         return 0
     if isinstance(value, str):
@@ -208,10 +214,11 @@ def _coerce_relevance(value) -> int:
 
 
 def parse_batch_response(raw: str, batch: list[NewsItem]) -> list[SummarizedItem]:
-    """Converte a resposta de um lote em SummarizedItem.
+    """Convert a batch response into SummarizedItem objects.
 
-    Titulo, fonte e link vem sempre do item original — nunca do que o modelo
-    escreveu. Assim uma alucinacao de fonte ou de URL nao chega a etapa 3.
+    Title, source and link always come from the original item, never from what
+    the model wrote back. That way a hallucinated source or URL never reaches
+    stage 3.
     """
     itens: list[SummarizedItem] = []
     ja_usados: set[int] = set()
@@ -246,11 +253,11 @@ def parse_batch_response(raw: str, batch: list[NewsItem]) -> list[SummarizedItem
 
 
 def parse_themes_response(raw: str) -> list[str]:
-    """Extrai a lista de temas do dia. Best-effort: erro vira lista vazia."""
+    """Extract the day's theme list. Best-effort: an error becomes an empty list."""
     try:
         data = extract_json(raw)
     except ValueError as exc:
-        log.warning("temas do dia ignorados: %s", exc)
+        log.warning("ignoring the day's themes: %s", exc)
         return []
 
     if isinstance(data, dict):
@@ -272,7 +279,7 @@ def parse_themes_response(raw: str) -> list[str]:
 
 
 # --------------------------------------------------------------------------- #
-# Selecao (puro)
+# Selection (pure)
 # --------------------------------------------------------------------------- #
 
 def dedupe_and_rank(
@@ -280,10 +287,10 @@ def dedupe_and_rank(
     limit: int = MAX_ITEMS_TO_STAGE3,
     min_relevance: int = MIN_RELEVANCE,
 ) -> list[SummarizedItem]:
-    """Ordena por relevancia, remove duplicatas entre lotes e corta no limite.
+    """Sort by relevance, drop cross-batch duplicates, cut at the limit.
 
-    A ordem importa: ordenar antes de deduplicar garante que, entre duas versoes
-    da mesma noticia, a que sobrevive e a de maior relevancia.
+    The order matters: sorting before deduplicating guarantees that, between two
+    versions of the same story, the survivor is the more relevant one.
     """
     candidatos = sorted(
         (i for i in items if i.relevance >= min_relevance),
@@ -304,7 +311,7 @@ def dedupe_and_rank(
 
 
 def build_batch_prompt(batch: list[NewsItem]) -> str:
-    """Monta o bloco de noticias numeradas enviado ao modelo local."""
+    """Build the numbered item block sent to the local model."""
     blocos = []
     for numero, item in enumerate(batch, start=1):
         linhas = [f"[{numero}] {item.title}", f"    fonte: {item.source_name}"]
@@ -323,7 +330,7 @@ def build_themes_prompt(items: list[SummarizedItem]) -> str:
 
 
 # --------------------------------------------------------------------------- #
-# Orquestracao
+# Orchestration
 # --------------------------------------------------------------------------- #
 
 def summarize(
@@ -331,9 +338,9 @@ def summarize(
     config: OllamaConfig,
     client=None,  # noqa: ANN001 — injetavel, como nas etapas 1 e 3
 ) -> Digest:
-    """Resume e tria a coleta bruta com o modelo local."""
+    """Summarise and triage the raw collection with the local model."""
     if not collection.items:
-        raise ValueError("coleta vazia: nada para resumir")
+        raise ValueError("empty collection: nothing to summarise")
 
     client = client or OllamaClient(config)
 
@@ -342,7 +349,7 @@ def summarize(
         for i in range(0, len(collection.items), BATCH_SIZE)
     ]
     log.info(
-        "triagem local de %d notícias em %d lote(s) com %s",
+        "local triage of %d items in %d batch(es) with %s",
         len(collection.items), len(lotes), config.model,
     )
 
@@ -354,35 +361,35 @@ def summarize(
         try:
             raw = client.generate(build_batch_prompt(lote), system=SUMMARIZE_PROMPT)
             itens = parse_batch_response(raw, lote)
-        except Exception as exc:  # timeout, HTTP, JSON irrecuperavel...
+        except Exception as exc:  # timeout, HTTP, unrecoverable JSON...
             falhas += 1
-            log.warning("lote %d/%d descartado: %s", numero, len(lotes), exc)
+            log.warning("batch %d/%d dropped: %s", numero, len(lotes), exc)
             continue
 
         resumidos.extend(itens)
         log.info(
-            "lote %d/%d: %d de %d itens mantidos em %.1fs",
+            "batch %d/%d: kept %d of %d items in %.1fs",
             numero, len(lotes), len(itens), len(lote), time.monotonic() - inicio,
         )
 
     if falhas == len(lotes):
         raise RuntimeError(
-            f"todos os {len(lotes)} lotes falharam na triagem local. "
-            "Verifique o Ollama com `python -m podcast.cli doctor`."
+            f"all {len(lotes)} batches failed in local triage. "
+            "Check Ollama with `python -m podcast.cli doctor`."
         )
 
     selecionados = dedupe_and_rank(resumidos)
     if not selecionados:
         raise RuntimeError(
-            "a triagem local não aprovou nenhuma notícia "
-            f"(de {len(collection.items)} coletadas). Revise o prompt da etapa 2 "
-            "ou a relevância mínima."
+            "local triage approved no items "
+            f"(out of {len(collection.items)} collected). Review the stage 2 "
+            "prompt or the minimum relevance."
         )
 
     temas = extract_themes(selecionados, client)
     log.info(
-        "triagem concluída: %d itens, temas: %s",
-        len(selecionados), ", ".join(temas) or "(nenhum)",
+        "triage complete: %d items, themes: %s",
+        len(selecionados), ", ".join(temas) or "(none)",
     )
 
     return Digest(
@@ -393,11 +400,11 @@ def summarize(
 
 
 def extract_themes(items: list[SummarizedItem], client) -> list[str]:  # noqa: ANN001
-    """Segunda chamada: os 3-5 temas do dia. Falha aqui nao aborta a etapa."""
+    """Second call: the day's 3-5 themes. A failure here does not abort the stage."""
     try:
         raw = client.generate(build_themes_prompt(items), system=THEMES_PROMPT)
     except Exception as exc:
-        log.warning("extração de temas falhou: %s", exc)
+        log.warning("theme extraction failed: %s", exc)
         return []
     return parse_themes_response(raw)
 

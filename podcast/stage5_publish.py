@@ -1,38 +1,42 @@
-"""Etapa 5 — publicacao do feed RSS privado no GitHub Pages. IMPLEMENTADA.
+"""Stage 5 - publishing the private RSS feed to GitHub Pages. IMPLEMENTED.
 
-Nao exige GPU. Fica por ultimo porque so faz sentido depois que a etapa 4
-produzir mp3 de verdade.
+Needs no GPU. It comes last because it only makes sense once stage 4 has
+produced a real mp3.
 
-Fluxo:
-    mp3 do episodio -> copiado para public_dir junto de um sidecar .json com
-    os metadados (titulo, temas, data) -> feed.xml reconstruido do zero a
-    partir do que existe em public_dir -> git commit/push da branch do
-    GitHub Pages.
+Flow:
+    episode mp3 -> copied into public_dir alongside a .json sidecar holding the
+    metadata (title, themes, date) -> feed.xml rebuilt from scratch out of
+    whatever is in public_dir -> git commit/push of the GitHub Pages branch.
 
-Decisoes que valem lembrar:
-    - O feed e reconstruido inteiro a cada execucao (nunca append incremental)
-      varrendo os mp3 existentes em public_dir. Se o feed corromper ou um mp3
-      for apagado a mao, a proxima execucao conserta sozinha.
-    - Cada mp3 vem com um sidecar `<data>.json` com os metadados do episodio
-      (titulo, temas, data de geracao). Sem isso o feed teria que extrair
-      titulo/tema de volta do nome do arquivo. Um mp3 sem sidecar (publicado
-      por fora do pipeline) ainda entra no feed, com um titulo generico —
-      nunca quebra a reconstrucao.
-    - So os ultimos MAX_EPISODES_IN_FEED ficam no feed; os mp3 e sidecars mais
-      antigos sao apagados de public_dir. GitHub Pages nao e o lugar de
-      arquivar meses de episodios, e ninguem vai ouvir o de 3 meses atras.
-    - `build_feed` (monta o XML) e separado da publicacao em si (git
-      commit/push), para poder testar a montagem do feed sem git nem rede. A
-      publicacao entra por injecao (`pusher`), como o cliente/engine das
-      outras etapas.
-    - `public_dir` precisa ser, de antemao, um checkout git da branch
-      `gh-pages` (configurado uma vez, nao a cada execucao — ver README,
-      secao "Publicacao — GitHub Pages"). O pusher padrao nao cria a branch
-      sozinho: e uma etapa de setup manual, nao de execucao noturna.
+Decisions worth remembering:
+    - The feed is rebuilt in full on every run (never an incremental append) by
+      scanning the mp3s in public_dir. If the feed is corrupted, or an mp3 is
+      deleted by hand, the next run repairs it by itself.
+    - Each mp3 carries a `<date>.json` sidecar with the episode metadata
+      (title, themes, generation date). Without it the feed would have to
+      reconstruct the title and themes from the filename. An mp3 with no
+      sidecar (published outside the pipeline) still enters the feed with a
+      generic title -- it never breaks the rebuild.
+    - Only the most recent MAX_EPISODES_IN_FEED stay in the feed; older mp3s
+      and sidecars are deleted from public_dir. GitHub Pages is not the place
+      to archive months of episodes, and nobody listens to one from three
+      months ago.
+    - `build_feed` (which assembles the XML) is separate from publishing itself
+      (git commit/push), so the feed can be tested without git or a network.
+      Publishing is injected (`pusher`), like the client and engine of the
+      other stages.
+    - `public_dir` must already be a git checkout of the `gh-pages` branch,
+      configured once rather than per run (see README, "Publication - GitHub
+      Pages"). The default pusher will not create the branch itself: that is a
+      manual setup step, not something to attempt at five in the morning.
 
-Privacidade: o feed e "privado" apenas por obscuridade da URL — qualquer um com
-o link consegue ouvir. Nao inclua nada sensivel, e nao submeta a URL a diretorios
-de podcast.
+Privacy: the feed is "private" only through the obscurity of its URL -- anyone
+holding the link can listen. Publish nothing sensitive, and never submit the URL
+to a podcast directory.
+
+Note on language: the strings that end up *inside* the feed stay in Portuguese.
+They are the podcast's own content, read by a Brazilian audience in the iOS
+Podcasts app, and translating them would corrupt the product to tidy the source.
 """
 
 from __future__ import annotations
@@ -56,7 +60,7 @@ Pusher = Callable[[Path, str], None]
 
 
 # --------------------------------------------------------------------------- #
-# Metadados por episodio (sidecar json ao lado do mp3)
+# Per-episode metadata (json sidecar next to the mp3)
 # --------------------------------------------------------------------------- #
 
 def _meta_path(mp3_path: Path) -> Path:
@@ -79,19 +83,19 @@ def _write_meta(script: Script, public_dir: Path) -> None:
 def _fallback_meta(mp3_path: Path) -> dict:
     return {
         "episode_date": mp3_path.stem,
-        "title": f"Episódio de {mp3_path.stem}",
+        "title": f"Episódio de {mp3_path.stem}",  # feed content: stays pt-BR
         "themes": [],
         "generated_at": None,
     }
 
 
 def _read_meta(mp3_path: Path) -> dict:
-    """Le o sidecar json de um episodio; nunca falha por sidecar ausente ou ruim.
+    """Read an episode's json sidecar; never fails on a missing or bad one.
 
-    Um mp3 sem `.json` (publicado por fora do pipeline, ou de uma execucao
-    anterior a esta funcionalidade) ou com um sidecar corrompido/incompleto
-    (escrita interrompida, disco cheio, edicao manual) ainda precisa entrar no
-    feed — so com um titulo generico em vez de quebrar a reconstrucao inteira.
+    An mp3 with no `.json` (published outside the pipeline, or from a run that
+    predates this feature) or with a corrupt or incomplete sidecar (interrupted
+    write, full disk, hand editing) still has to enter the feed -- with a
+    generic title, rather than breaking the entire rebuild.
     """
     meta_path = _meta_path(mp3_path)
     if not meta_path.exists():
@@ -110,14 +114,14 @@ def _read_meta(mp3_path: Path) -> dict:
 
 
 # --------------------------------------------------------------------------- #
-# Construcao do feed (I/O local — sem git, sem rede; testavel isoladamente)
+# Feed construction (local I/O -- no git, no network; testable in isolation)
 # --------------------------------------------------------------------------- #
 
 def _prune_old_episodes(mp3_files: list[Path]) -> list[Path]:
-    """Mantem so os MAX_EPISODES_IN_FEED mais recentes; apaga mp3 + sidecar dos demais.
+    """Keep only the MAX_EPISODES_IN_FEED newest; delete the rest, mp3 + sidecar.
 
-    Nomes de arquivo sao AAAA-MM-DD.mp3, entao ordenar pelo nome equivale a
-    ordenar pela data — mais recente primeiro.
+    Filenames are YYYY-MM-DD.mp3, so sorting by name is sorting by date --
+    newest first.
     """
     mp3_files = sorted(mp3_files, key=lambda p: p.stem, reverse=True)
     manter, descartar = mp3_files[:MAX_EPISODES_IN_FEED], mp3_files[MAX_EPISODES_IN_FEED:]
@@ -129,12 +133,12 @@ def _prune_old_episodes(mp3_files: list[Path]) -> list[Path]:
 
 
 def build_feed(config: PublishConfig, public_dir: Path) -> Path:
-    """Reconstroi feed.xml a partir dos mp3 em public_dir."""
+    """Rebuild feed.xml from the mp3s in public_dir."""
     from feedgen.feed import FeedGenerator
 
     if not config.base_url:
         raise ConfigError(
-            "PODCAST_BASE_URL não definido — não dá para montar URLs absolutas do feed."
+            "PODCAST_BASE_URL is not set - cannot build absolute feed URLs."
         )
 
     public_dir.mkdir(parents=True, exist_ok=True)
@@ -148,16 +152,16 @@ def build_feed(config: PublishConfig, public_dir: Path) -> Path:
     fg.language(config.language)
     if config.author:
         fg.podcast.itunes_author(config.author)
-    if config.author and config.email:  # feedgen exige os dois juntos, ou nenhum
+    if config.author and config.email:  # feedgen wants both or neither
         fg.podcast.itunes_owner(name=config.author, email=config.email)
     fg.podcast.itunes_explicit("no")
 
-    for mp3_path in mp3_files:  # ja ordenado do mais recente para o mais antigo
+    for mp3_path in mp3_files:  # already ordered newest to oldest
         meta = _read_meta(mp3_path)
         url = f"{config.base_url}/{mp3_path.name}"
         temas = meta.get("themes") or []
 
-        fe = fg.add_entry(order="append")  # feedgen prepende por padrao
+        fe = fg.add_entry(order="append")  # feedgen prepends by default
         fe.id(url)
         fe.title(meta["title"])
         fe.description(f"Temas: {', '.join(temas)}." if temas else meta["title"])
@@ -172,22 +176,22 @@ def build_feed(config: PublishConfig, public_dir: Path) -> Path:
 
 
 # --------------------------------------------------------------------------- #
-# Publicacao (mp3 -> public_dir -> git push da branch do GitHub Pages)
+# Publication (mp3 -> public_dir -> git push of the GitHub Pages branch)
 # --------------------------------------------------------------------------- #
 
 def default_pusher(public_dir: Path, message: str) -> None:
-    """Comita e envia public_dir para a branch do GitHub Pages.
+    """Commit public_dir and push it to the GitHub Pages branch.
 
-    Assume que public_dir JA E um checkout git da branch gh-pages (configurado
-    uma vez com `git worktree add data/public gh-pages` — ver README). Nao
-    tenta criar a branch sozinho: e uma operacao de setup, nao de execucao
-    noturna, e criar branch/remote sozinho na madrugada e mais risco do que
-    vale.
+    Assumes public_dir IS ALREADY a git checkout of the pages branch, set up
+    once with `git worktree add data/public gh-pages` (see README). It will not
+    create the branch itself: that is a setup operation, not a nightly one, and
+    creating a branch and remote unattended at 5 a.m. is more risk than it is
+    worth.
     """
     if not (public_dir / ".git").exists():
         raise ConfigError(
-            f"{public_dir} não é um checkout git da branch do GitHub Pages.\n"
-            "Configure uma vez (ver README, 'Publicação — GitHub Pages'):\n"
+            f"{public_dir} is not a git checkout of the GitHub Pages branch.\n"
+            "Set it up once (see README, 'Publication - GitHub Pages'):\n"
             f"  git worktree add {public_dir} gh-pages"
         )
 
@@ -210,9 +214,9 @@ def publish_episode(
     audio_path: Path,
     config: PublishConfig,
     public_dir: Path,
-    pusher: Pusher = default_pusher,  # injetavel, como nas etapas 1-4
+    pusher: Pusher = default_pusher,  # injected, as in stages 1-4
 ) -> Path:
-    """Copia o mp3 para a pasta publicada, regenera o feed e envia ao GitHub Pages."""
+    """Copy the mp3 into the published folder, rebuild the feed, push it."""
     public_dir.mkdir(parents=True, exist_ok=True)
 
     destino = public_dir / f"{script.episode_date}.mp3"

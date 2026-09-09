@@ -62,7 +62,7 @@ class TestVoiceFor:
 
     def test_locutor_desconhecido_e_erro(self, audio_config):
         # Fallback silencioso geraria um episodio inteiro na voz errada.
-        with pytest.raises(ValueError, match="sem voz configurada"):
+        with pytest.raises(ValueError, match="no voice configured"):
             voice_for("Carlos", audio_config)
 
 
@@ -150,7 +150,7 @@ class TestPlanSegments:
             title="T",
             lines=[ScriptLine(speaker="Maria", text="   ")],
         )
-        with pytest.raises(ValueError, match="sem texto"):
+        with pytest.raises(ValueError, match="no synthesisable text"):
             plan_segments(vazio, audio_config)
 
     def test_locutor_desconhecido_falha_antes_de_sintetizar(self, audio_config):
@@ -160,7 +160,7 @@ class TestPlanSegments:
             title="T",
             lines=[ScriptLine(speaker="Carlos", text="Olá.")],
         )
-        with pytest.raises(ValueError, match="sem voz configurada"):
+        with pytest.raises(ValueError, match="no voice configured"):
             plan_segments(ruim, audio_config)
 
 

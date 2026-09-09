@@ -182,12 +182,12 @@ class TestGenerateScript:
 
     def test_digest_vazio_e_erro(self):
         vazio = Digest(generated_at=datetime.now(timezone.utc))
-        with pytest.raises(ValueError, match="vazio"):
+        with pytest.raises(ValueError, match="empty"):
             generate_script(vazio, ScriptConfig(api_key="t"), client=FakeClient(RESPOSTA_OK))
 
     def test_recusa_da_api_vira_erro_claro(self, digest):
         client = FakeClient(RESPOSTA_OK, stop_reason="refusal")
-        with pytest.raises(RuntimeError, match="recusou"):
+        with pytest.raises(RuntimeError, match="refused"):
             generate_script(digest, ScriptConfig(api_key="t"), client=client)
 
     def test_truncamento_vira_erro_claro(self, digest):
@@ -207,7 +207,7 @@ class TestGenerateScript:
 
     def test_roteiro_sem_falas_vira_erro(self, digest):
         client = FakeClient({"title": "T", "themes": [], "lines": []})
-        with pytest.raises(RuntimeError, match="sem falas"):
+        with pytest.raises(RuntimeError, match="no lines"):
             generate_script(digest, ScriptConfig(api_key="t"), client=client)
 
     def test_locutor_desconhecido_vira_erro(self, digest):
@@ -216,7 +216,7 @@ class TestGenerateScript:
             "title": "T", "themes": [],
             "lines": [{"speaker": "Carlos", "text": "Olá."}],
         })
-        with pytest.raises(RuntimeError, match="locutor desconhecido"):
+        with pytest.raises(RuntimeError, match="unknown speaker"):
             generate_script(digest, ScriptConfig(api_key="t"), client=client)
 
     def test_roteiro_acima_do_teto_avisa_mas_nao_falha(self, digest, caplog):
@@ -237,13 +237,13 @@ class TestGenerateScript:
             )
 
         assert len(script.lines) == 70  # gerado assim mesmo
-        assert "acima do teto" in caplog.text
+        assert "above the 30 min ceiling" in caplog.text
 
     def test_roteiro_dentro_do_teto_nao_avisa(self, digest, caplog):
         client = FakeClient(RESPOSTA_OK)
         with caplog.at_level("WARNING"):
             generate_script(digest, ScriptConfig(api_key="t"), client=client)
-        assert "acima do teto" not in caplog.text
+        assert "above the 30 min ceiling" not in caplog.text
 
     def test_falas_vazias_sao_descartadas(self, digest):
         client = FakeClient({

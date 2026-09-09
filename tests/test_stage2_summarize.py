@@ -137,11 +137,11 @@ class TestExtractJson:
         assert extract_json(raw) == {"a": 1}
 
     def test_resposta_vazia_e_erro(self):
-        with pytest.raises(ValueError, match="vazia"):
+        with pytest.raises(ValueError, match="empty"):
             extract_json("   ")
 
     def test_sem_json_e_erro(self):
-        with pytest.raises(ValueError, match="não é JSON|nao e JSON"):
+        with pytest.raises(ValueError, match="not JSON"):
             extract_json("desculpe, não consegui")
 
 
@@ -375,14 +375,14 @@ class TestSummarize:
 
     def test_todos_os_lotes_falhando_e_erro(self, colecao, ollama_config):
         client = FakeOllama(ConnectionError("ollama fora do ar"))
-        with pytest.raises(RuntimeError, match="lotes falharam"):
+        with pytest.raises(RuntimeError, match="batches failed"):
             summarize(colecao, ollama_config, client=client)
 
     def test_triagem_que_zera_tudo_e_erro(self, colecao, ollama_config):
         # Aprovar zero noticia significa prompt ou corte mal calibrado — nao
         # pode passar batido e gerar um episodio vazio.
         client = FakeOllama(resposta_de_itens())
-        with pytest.raises(RuntimeError, match="nenhuma notícia"):
+        with pytest.raises(RuntimeError, match="approved no items"):
             summarize(colecao, ollama_config, client=client)
 
     def test_falha_nos_temas_nao_derruba_a_etapa(self, colecao, ollama_config):
@@ -393,7 +393,7 @@ class TestSummarize:
 
     def test_coleta_vazia_e_erro(self, ollama_config):
         vazia = Collection(collected_at=datetime.now(timezone.utc), window_hours=24)
-        with pytest.raises(ValueError, match="vazia"):
+        with pytest.raises(ValueError, match="empty"):
             summarize(vazia, ollama_config, client=FakeOllama(""))
 
     def test_prompt_de_sistema_e_o_da_triagem(self, colecao, ollama_config):

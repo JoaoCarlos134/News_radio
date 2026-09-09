@@ -1,4 +1,8 @@
-"""Normalizacao de texto e URL. Funcoes puras — faceis de testar sem rede."""
+"""Text and URL normalisation. Pure functions -- easy to test without a network.
+
+The stopword list and the boilerplate patterns below are Portuguese-language
+data matched against Portuguese feeds, and stay in Portuguese.
+"""
 
 from __future__ import annotations
 
@@ -14,7 +18,7 @@ class _TagStripper(HTMLParser):
     def __init__(self) -> None:
         super().__init__(convert_charrefs=True)
         self._parts: list[str] = []
-        # Nao queremos o conteudo textual destas tags no resumo.
+        # We do not want these tags' text content in the summary.
         self._skip_depth = 0
 
     _SKIP_TAGS = {"script", "style"}
@@ -38,10 +42,10 @@ class _TagStripper(HTMLParser):
 
 
 def strip_html(raw: str | None) -> str:
-    """Remove tags HTML e normaliza espacos.
+    """Strip HTML tags and normalise whitespace.
 
-    Resumos de RSS quase sempre vem com HTML (links, <p>, entidades). O modelo
-    local nao ganha nada com isso e as tags gastam tokens.
+    RSS summaries almost always arrive with HTML (links, <p>, entities). The
+    local model gains nothing from it and the tags cost tokens.
     """
     if not raw:
         return ""
@@ -53,32 +57,32 @@ def strip_html(raw: str | None) -> str:
     except Exception:  # HTML muito quebrado — cai para regex simples
         text = re.sub(r"<[^>]+>", " ", raw)
     text = unescape(text)
-    # Normaliza espacos, incluindo NBSP e afins.
+    # Normalise whitespace, including NBSP and friends.
     text = text.replace("\xa0", " ")
     return re.sub(r"\s+", " ", text).strip()
 
 
-# Caracteres invisiveis que varios CMS injetam no texto. Gastam token e podem
-# atrapalhar tanto a comparacao de titulos quanto a leitura pelo TTS.
+# Invisible characters that several CMSs inject into text. They cost tokens and
+# can disrupt both title comparison and the TTS reading.
 _INVISIVEIS = str.maketrans("", "", "​‌‍⁠﻿­")
 
-# Rodapes de boilerplate observados nos feeds reais (coleta de 2026-08-03).
+# Boilerplate footers observed in the real feeds (collection of 2026-08-03).
 _BOILERPLATE = (
-    # WordPress: "The post <titulo> appeared first on InfoMoney."
+    # WordPress: "The post <title> appeared first on InfoMoney."
     re.compile(r"\s*The post\b.*?\bappeared first on\b.*$", re.IGNORECASE | re.DOTALL),
     # Folha: "Leia mais (08/03/2026 - 09h53)"
     re.compile(r"\s*Leia mais\s*\([^)]*\)\s*$", re.IGNORECASE),
-    # Chamadas genericas de "continue lendo" no fim do resumo
+    # Generic "continue reading" calls at the end of a summary
     re.compile(r"\s*(Continue lendo|Leia a matéria completa|Saiba mais)\s*[.…]*\s*$",
                re.IGNORECASE),
 )
 
 
 def clean_summary(text: str) -> str:
-    """Remove boilerplate de CMS e caracteres invisiveis de um resumo.
+    """Strip CMS boilerplate and invisible characters from a summary.
 
-    O resumo vai direto para o prompt da etapa 3; rodape repetido em dezenas de
-    itens e token pago sem valor analitico.
+    The summary goes straight into stage 3's prompt; a footer repeated across
+    dozens of items is paid tokens with no analytical value.
     """
     if not text:
         return ""
@@ -89,14 +93,14 @@ def clean_summary(text: str) -> str:
 
 
 def truncate(text: str, max_chars: int) -> str:
-    """Corta em limite de palavra, sem cortar no meio de uma."""
+    """Cut at a word boundary, never mid-word."""
     if len(text) <= max_chars:
         return text
     cut = text[:max_chars].rsplit(" ", 1)[0].rstrip(" ,;:-—")
     return f"{cut}…"
 
 
-# Parametros de rastreamento que mudam a URL sem mudar o artigo.
+# Tracking parameters that change the URL without changing the article.
 _TRACKING_PARAMS = re.compile(
     r"^(utm_|fbclid$|gclid$|mc_cid$|mc_eid$|xtor$|ref$|origem$|__twitter)",
     re.IGNORECASE,
@@ -104,22 +108,22 @@ _TRACKING_PARAMS = re.compile(
 
 
 def unwrap_redirect(url: str) -> str:
-    """Extrai a URL real de um wrapper de redirecionamento.
+    """Extract the real URL from a redirect wrapper.
 
-    A Folha publica links como
+    Folha publishes links like
         https://redir.folha.com.br/redir/online/mercado/rss091/*https://...
-    Sem desembrulhar, dois feeds da Folha apontando para o mesmo artigo por
-    caminhos de redirect diferentes escapam da deduplicacao por URL.
+    Without unwrapping, two Folha feeds pointing at the same article through
+    different redirect paths escape URL deduplication.
     """
     marcador = url.rfind("*http")
     return url[marcador + 1:] if marcador != -1 else url
 
 
 def canonical_url(url: str) -> str:
-    """URL comparavel: sem wrapper de redirect, sem fragmento, sem rastreamento.
+    """A comparable URL: no redirect wrapper, no fragment, no tracking.
 
-    Usada tanto para gerar o id estavel do item quanto para deduplicar o mesmo
-    artigo chegando por feeds diferentes do mesmo veiculo.
+    Used both to generate the item's stable id and to deduplicate the same
+    article arriving through different feeds of one outlet.
     """
     if not url:
         return ""
@@ -137,14 +141,14 @@ def canonical_url(url: str) -> str:
 
 
 def normalize_title(title: str) -> str:
-    """Titulo reduzido a uma forma comparavel: sem acento, sem pontuacao, minusculo."""
+    """A title reduced to a comparable form: unaccented, unpunctuated, lowercase."""
     text = unicodedata.normalize("NFKD", title.lower())
     text = "".join(c for c in text if not unicodedata.combining(c))
     text = re.sub(r"[^a-z0-9\s]", " ", text)
     return re.sub(r"\s+", " ", text).strip()
 
 
-# Palavras curtas/comuns que nao ajudam a distinguir manchetes.
+# Short/common Portuguese words that do not help distinguish headlines.
 _STOPWORDS = frozenset("""
 a ao aos as com como da das de do dos e em entre na nas no nos o os ou para
 pela pelas pelo pelos por que se sem sob sobre um uma uns umas apos ate
@@ -159,10 +163,10 @@ def title_tokens(title: str) -> frozenset[str]:
 
 
 def title_similarity(a: str, b: str) -> float:
-    """Jaccard entre os conjuntos de palavras significativas de dois titulos.
+    """Jaccard similarity between two titles' sets of significant words.
 
-    Detecta a mesma noticia publicada com manchetes ligeiramente diferentes por
-    veiculos distintos, que e o caso comum de duplicata neste pipeline.
+    Detects the same story published under slightly different headlines by
+    different outlets, which is the common duplicate case in this pipeline.
     """
     ta, tb = title_tokens(a), title_tokens(b)
     if not ta or not tb:
@@ -171,7 +175,7 @@ def title_similarity(a: str, b: str) -> float:
 
 
 def stable_id(*parts: str) -> str:
-    """Id determinista e curto. Determinista importa: o cache de 'ja visto'
-    entre execucoes depende de o mesmo artigo gerar sempre o mesmo id."""
+    """A short, deterministic id. Deterministic matters: the cross-run
+    seen-cache depends on one article always producing the same id."""
     digest = hashlib.sha1("\x1f".join(parts).encode("utf-8")).hexdigest()
     return digest[:16]

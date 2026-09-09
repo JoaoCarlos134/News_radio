@@ -1,34 +1,37 @@
-"""Etapa 4 — sintese de audio com Kokoro TTS local. IMPLEMENTADA.
+"""Stage 4 - audio synthesis with local Kokoro TTS. IMPLEMENTED.
 
-EXIGE os arquivos do modelo Kokoro baixados na maquina com a RTX 4070. Na
-maquina sem GPU nao executa (requirements-audio.txt nao e instalado la de
-proposito), mas o codigo e os testes se escrevem nas duas: o planejamento das
-falas e funcao pura, e os testes que precisam de numpy/pydub se auto-pulam.
+REQUIRES the Kokoro model files present on the machine with the GPU. It does
+not execute without them (requirements-audio.txt is deliberately excluded from
+the development and CI install), but the code and its tests are still written
+and run everywhere: segment planning is a pure function, and the tests that
+need numpy/pydub skip themselves.
 
-O que esta etapa faz:
-    Script (falas de Maria e Pedro) -> um mp3 unico, na ordem certa, com as
-    duas vozes alternando e uma pequena pausa entre falas.
+What this stage does:
+    Script (Maria's and Pedro's lines) -> a single mp3, in order, with the two
+    voices alternating and a short pause between lines.
 
-Fluxo:
-    roteiro -> plano de trechos (voz + texto, ja quebrado por frase)
-    -> uma chamada ao Kokoro por trecho -> concatenacao com silencio entre
-    falas -> export mp3 mono 96k com tags ID3
+Flow:
+    script -> segment plan (voice + text, already split by sentence)
+    -> one Kokoro call per segment -> concatenation with silence between lines
+    -> export as mono 96k mp3 with ID3 tags
 
-Decisoes que valem lembrar:
-    - O modelo e carregado UMA vez e reaproveitado: a carga inicial domina o
-      tempo total.
-    - Falas longas sao quebradas por frase antes de sintetizar. O Kokoro degrada
-      (corta ou acelera) em textos longos, e o defeito e dificil de perceber sem
-      ouvir o episodio inteiro.
-    - A pausa entre falas so entra ENTRE locutores diferentes ou entre falas
-      distintas — nao entre os pedacos de uma mesma fala, que devem soar
-      continuos.
-    - ffmpeg e conferido ANTES de sintetizar: descobrir que falta depois de
-      minutos de sintese seria desperdicio puro.
+Decisions worth remembering:
+    - The model is loaded ONCE and reused: the initial load dominates total
+      runtime.
+    - Long lines are split by sentence before synthesis. Kokoro degrades on long
+      text (clipping or speeding up), and the defect is hard to notice without
+      listening to a whole episode.
+    - The pause only goes BETWEEN different speakers or between distinct lines,
+      never between the pieces of a single line, which must sound continuous.
+    - ffmpeg is checked BEFORE synthesising: discovering it is missing after
+      minutes of synthesis would be pure waste.
 
-ANTES de otimizar esta etapa: gerar um trecho de teste e OUVIR. O CLAUDE.md
-prevê trocar o Kokoro por Coqui XTTS v2 ou Chatterbox se a qualidade em PT-BR
-não convencer.
+BEFORE optimising this stage: generate a test segment and LISTEN to it.
+CLAUDE.md allows replacing Kokoro with Coqui XTTS v2 or Chatterbox if the pt-BR
+quality does not convince.
+
+Note on language: the ID3 tags written below are product metadata shown in the
+listener's podcast app, so they stay in Portuguese.
 """
 
 from __future__ import annotations
@@ -46,44 +49,45 @@ log = logging.getLogger(__name__)
 
 MP3_BITRATE = "96k"
 
-# Codigo de idioma do Kokoro v1.0 para portugues brasileiro.
+# Kokoro v1.0's language code for Brazilian Portuguese.
 KOKORO_LANG = "pt-br"
 
-# Teto por chamada ao TTS. Acima disto a qualidade cai; quebramos por frase.
+# Ceiling per TTS call. Above this quality drops, so we split by sentence.
 MAX_CHARS_POR_TRECHO = 400
 
 
 # --------------------------------------------------------------------------- #
-# Planejamento (puro — roda e e testavel sem numpy, pydub ou Kokoro)
+# Planning (pure -- runs and is testable without numpy, pydub or Kokoro)
 # --------------------------------------------------------------------------- #
 
 def voice_for(speaker: str, config: AudioConfig) -> str:
-    """Voz configurada para o locutor.
+    """The voice configured for a speaker.
 
-    Locutor desconhecido e erro, nao um fallback silencioso: seria um episodio
-    inteiro na voz errada sem ninguem perceber ate ouvir.
+    An unknown speaker is an error, not a silent fallback: the alternative is a
+    whole episode in the wrong voice that nobody notices until they listen.
     """
     vozes = {"Maria": config.voice_maria, "Pedro": config.voice_pedro}
     try:
         return vozes[speaker]
     except KeyError:
         raise ValueError(
-            f"locutor sem voz configurada: {speaker!r} "
-            f"(conhecidos: {', '.join(vozes)})"
+            f"speaker has no voice configured: {speaker!r} "
+            f"(known: {', '.join(vozes)})"
         ) from None
 
 
-# Fim de frase: pontuacao seguida de espaco. O lookbehind mantem a pontuacao no
-# trecho anterior, que e o que o TTS precisa para fazer a entonacao de fim.
+# Sentence end: punctuation followed by a space. The lookbehind keeps the
+# punctuation in the preceding segment, which is what the TTS needs to produce
+# a closing intonation.
 _FIM_DE_FRASE = re.compile(r"(?<=[.!?…])\s+")
 
 
 def split_for_tts(text: str, max_chars: int = MAX_CHARS_POR_TRECHO) -> list[str]:
-    """Quebra uma fala em trechos que o TTS sintetiza bem.
+    """Split a line into segments the TTS synthesises well.
 
-    Agrupa frases inteiras enquanto couberem no limite — quebrar mais do que o
-    necessario introduz respiros artificiais no meio da fala. Frase unica maior
-    que o limite e quebrada por palavra, como ultimo recurso.
+    Groups whole sentences while they fit the limit -- splitting more than
+    necessary introduces artificial breaths mid-line. A single sentence longer
+    than the limit is split by word, as a last resort.
     """
     texto = " ".join(text.split())
     if not texto:
@@ -117,7 +121,7 @@ def split_for_tts(text: str, max_chars: int = MAX_CHARS_POR_TRECHO) -> list[str]
 
 
 def _split_by_words(frase: str, max_chars: int) -> list[str]:
-    """Ultimo recurso para uma frase sem pontuacao que estoura o limite."""
+    """Last resort for an unpunctuated sentence that overruns the limit."""
     trechos: list[str] = []
     atual = ""
     for palavra in frase.split():
@@ -133,11 +137,11 @@ def _split_by_words(frase: str, max_chars: int) -> list[str]:
 
 
 def plan_segments(script: Script, config: AudioConfig) -> list[tuple[str, str, bool]]:
-    """Monta a lista de trechos a sintetizar, na ordem do episodio.
+    """Build the list of segments to synthesise, in episode order.
 
-    Cada item e (voz, texto, comeca_fala): `comeca_fala` marca o primeiro trecho
-    de cada fala e e o que decide onde entra a pausa. Funcao pura de proposito —
-    e aqui que mora a logica que da para testar sem o TTS.
+    Each item is (voice, text, starts_line): `starts_line` marks the first
+    segment of each line and is what decides where the pause goes. Pure on
+    purpose -- this is where the logic that can be tested without the TTS lives.
     """
     plano: list[tuple[str, str, bool]] = []
 
@@ -148,31 +152,31 @@ def plan_segments(script: Script, config: AudioConfig) -> list[tuple[str, str, b
             plano.append((voz, trecho, posicao == 0))
 
     if not plano:
-        raise ValueError("roteiro sem texto sintetizavel")
+        raise ValueError("script has no synthesisable text")
     return plano
 
 
 # --------------------------------------------------------------------------- #
-# Sintese (exige Kokoro + numpy + pydub)
+# Synthesis (requires Kokoro + numpy + pydub)
 # --------------------------------------------------------------------------- #
 
 def load_engine(config: AudioConfig):
-    """Carrega o Kokoro uma unica vez."""
+    """Load Kokoro exactly once."""
     config.require_model_files()
     try:
         from kokoro_onnx import Kokoro
     except ImportError as exc:
         raise ConfigError(
-            "pacote kokoro-onnx não instalado. Na máquina com a RTX 4070: "
+            "kokoro-onnx is not installed. On the machine with the GPU: "
             "pip install -r requirements-audio.txt"
         ) from exc
 
-    log.info("carregando Kokoro de %s", config.model_path)
+    log.info("loading Kokoro from %s", config.model_path)
     return Kokoro(str(config.model_path), str(config.voices_path))
 
 
 def samples_to_segment(samples, sample_rate: int):  # noqa: ANN001
-    """Converte o float32 mono do Kokoro em AudioSegment do pydub."""
+    """Convert Kokoro's mono float32 output into a pydub AudioSegment."""
     import numpy as np
     from pydub import AudioSegment
 
@@ -190,16 +194,16 @@ def synthesize(
     script: Script,
     config: AudioConfig,
     out_dir: Path,
-    engine=None,  # noqa: ANN001 — injetavel, como nas etapas 1, 2 e 3
+    engine=None,  # noqa: ANN001 - injected, as in stages 1, 2 and 3
 ) -> Path:
-    """Converte o roteiro em um mp3 unico e devolve o caminho."""
+    """Turn the script into a single mp3 and return its path."""
     plano = plan_segments(script, config)
 
-    # Antes de qualquer sintese: sem ffmpeg o export falharia no fim.
+    # Before any synthesis: without ffmpeg the export would fail at the end.
     if shutil.which("ffmpeg") is None:
         raise ConfigError(
-            "ffmpeg não está no PATH — o pydub precisa dele para exportar mp3.\n"
-            "No Windows: winget install Gyan.FFmpeg (e abra um terminal novo)."
+            "ffmpeg is not on PATH - pydub needs it to export mp3.\n"
+            "On Windows: winget install Gyan.FFmpeg (then open a new terminal)."
         )
 
     from pydub import AudioSegment
@@ -224,7 +228,7 @@ def synthesize(
             episodio += pausa
         episodio += trecho
 
-        log.debug("trecho %d/%d (%s): %d caracteres", numero, len(plano), voz, len(texto))
+        log.debug("segment %d/%d (%s): %d characters", numero, len(plano), voz, len(texto))
 
     out_dir.mkdir(parents=True, exist_ok=True)
     path = out_dir / f"{script.episode_date}.mp3"
@@ -241,7 +245,7 @@ def synthesize(
     )
 
     log.info(
-        "áudio de %.1f min gerado em %.1f s (%d trechos): %s",
+        "%.1f min of audio generated in %.1f s (%d segments): %s",
         len(episodio) / 60000, time.monotonic() - inicio, len(plano), path,
     )
     return path
@@ -250,7 +254,7 @@ def synthesize(
 def check_audio_setup(config: AudioConfig) -> tuple[bool, str]:
     """Check stage 4 prerequisites without synthesising anything.
 
-    Run this on the GPU machine before spending minutes on synthesis.
+    Run this before spending minutes on synthesis.
     """
     problemas: list[str] = []
 
