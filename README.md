@@ -10,7 +10,7 @@
 
 Every stage that touches the outside world — the network, a local LLM, the paid API, the TTS engine, the git push — takes its client as an injected parameter. That one constraint is why the **full 221-test suite runs in under a second with no GPU, no API key and no network access** — the same code that drives the real pipeline on an RTX 4070 — and why a stranger can clone the repo and watch it produce a real RSS feed in one command. Cost is engineered rather than hoped for: summarisation and text-to-speech run on local models so the only metered call in the whole system is a single script-writing request, and the per-episode economics are **measured from real runs, not estimated** — 4,145 input and 10,141 output tokens, R$27/month against a R$50 budget. The speech-rate constant that sizes each episode was calibrated the same way: 172 words/minute, derived from a complete 18.74-minute episode rather than a short sample, because shorter samples read 15% fast and blew the duration ceiling.
 
-The project also documents what it *rejected*. Claude Haiku 4.5 costs a sixth as much and was tested and turned down for inventing arithmetic; the narrator's voice is `ef_dora` from Kokoro's Spanish pack rather than the Brazilian `pf_dora`, chosen by listening to six variants side by side. Both decisions are recorded with their reasoning, in [Cost](#cost) and [Voice selection](#4-kokoro-tts-stage-4).
+The project also documents what it *rejected*. Claude Haiku 4.5 costs a sixth as much and was tested and turned down for inventing arithmetic; the narrator's voice is `ef_dora` from Kokoro's Spanish pack rather than the Brazilian `pf_dora`, chosen by listening to six variants side by side. Both decisions are recorded with their reasoning, in [Cost](#cost) and [Voice selection](#voice-selection).
 
 ### Hear it
 
@@ -46,7 +46,7 @@ flowchart TD
         S5["<b>5 · Publish</b><br/>RSS feed + git push<br/><i>feedgen · free</i>"]
     end
 
-    subgraph GPU["🎮  Requires RTX 4070 · 12 GB VRAM"]
+    subgraph GPU["🎮  Requires an NVIDIA GPU · ≥12 GB VRAM"]
         S2["<b>2 · Summarise</b><br/>Triage, dedupe, themes<br/><i>Ollama Qwen2.5 14B · free</i>"]
         S4["<b>4 · Audio</b><br/>Two-voice TTS + concat<br/><i>Kokoro ONNX · free</i>"]
     end
@@ -306,6 +306,12 @@ python -m pytest -v           # verbose
 python -m pytest tests/test_stage1_collect.py
 ```
 
-Every stage that talks to an external service (network, Ollama, paid API, git) receives its client by injection so the tests run without that service. Follow that pattern in any new stage — it's what keeps the suite executable on the development machine.
+Every stage that talks to an external service (network, Ollama, paid API, git) receives its client by injection so the tests run without that service. Follow that pattern in any new stage — it's what keeps the suite runnable on CI and from a fresh clone.
+
+### A note on language
+
+The package is written in English. Some things are deliberately in Portuguese, and each is marked in place: the stage 2 and 3 prompts, which instruct models that must answer in Portuguese; the strings that reach the feed and the mp3's ID3 tags, which listeners read in their podcast app; and the stopword list and boilerplate patterns, which are matched against Portuguese text.
+
+`tests/` is in Portuguese too. Its fixtures are real Brazilian feeds and its names describe behaviour over Portuguese text — `test_remove_titulo_semelhante_de_veiculos_diferentes` says what it checks more precisely than an English rename would. That is a decision, not an oversight.
 
 Architecture decisions and project constraints are recorded in [CLAUDE.md](CLAUDE.md).

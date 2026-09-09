@@ -153,6 +153,18 @@ so stage 4 cannot install on 3.14. Stages 1, 2, 3 and 5 are fine there.
 without the backport `import pydub` fails. It is already in
 `requirements-audio.txt` behind a version marker.
 
+**The package is English; the tests and the product are not.** Docstrings,
+comments, log lines and exception messages in `podcast/` are English. Four things
+stay Portuguese on purpose, and each is marked in place: the prompts in stages 2
+and 3, which instruct models that must answer in Portuguese; the strings that
+reach the feed and the mp3's ID3 tags, which listeners read in their podcast app;
+the stopword list and boilerplate patterns in `textutils.py`, which are matched
+against Portuguese text; and the alternative JSON keys the local model emits.
+`tests/` also stays Portuguese -- its names describe behaviour over Portuguese
+text (`test_remove_titulo_semelhante_de_veiculos_diferentes`) and its fixtures are Portuguese feeds,
+so translating the names would make them less accurate, not more. Do not
+"finish the job" on any of these.
+
 **Everything is UTF-8; Windows is not.** The console defaults to cp1252 here and
 mangles the first accented character. Pass `encoding="utf-8"` explicitly on every
 `open()`, and set `PYTHONIOENCODING=utf-8` before printing non-ASCII.
