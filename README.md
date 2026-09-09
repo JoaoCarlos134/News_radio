@@ -8,7 +8,7 @@
 
 ### What makes it interesting
 
-Every stage that touches the outside world — the network, a local LLM, the paid API, the TTS engine, the git push — takes its client as an injected parameter. That one constraint is why the **full 217-test suite runs in under a second on a laptop with no GPU, no API key and no network access**, while the same code runs the real pipeline on an RTX 4070. Cost is engineered rather than hoped for: summarisation and text-to-speech run on local models so the only metered call in the whole system is a single script-writing request, and the per-episode economics are **measured from real runs, not estimated** — 4,145 input and 10,141 output tokens, R$27/month against a R$50 budget. The speech-rate constant that sizes each episode was calibrated the same way: 172 words/minute, derived from a complete 18.74-minute episode rather than a short sample, because shorter samples read 15% fast and blew the duration ceiling.
+Every stage that touches the outside world — the network, a local LLM, the paid API, the TTS engine, the git push — takes its client as an injected parameter. That one constraint is why the **full 221-test suite runs in under a second with no GPU, no API key and no network access** — the same code that drives the real pipeline on an RTX 4070 — and why a stranger can clone the repo and watch it produce a real RSS feed in one command. Cost is engineered rather than hoped for: summarisation and text-to-speech run on local models so the only metered call in the whole system is a single script-writing request, and the per-episode economics are **measured from real runs, not estimated** — 4,145 input and 10,141 output tokens, R$27/month against a R$50 budget. The speech-rate constant that sizes each episode was calibrated the same way: 172 words/minute, derived from a complete 18.74-minute episode rather than a short sample, because shorter samples read 15% fast and blew the duration ceiling.
 
 The project also documents what it *rejected*. Claude Haiku 4.5 costs a sixth as much and was tested and turned down for inventing arithmetic; the narrator's voice is `ef_dora` from Kokoro's Spanish pack rather than the Brazilian `pf_dora`, chosen by listening to six variants side by side. Both decisions are recorded with their reasoning, in [Cost](#cost) and [Voice selection](#4-kokoro-tts-stage-4).
 
@@ -20,7 +20,19 @@ The project also documents what it *rejected*. Claude Haiku 4.5 costs a sixth as
 🎧 **[The six voice candidates that decided Maria's voice](docs/voices/)** — the
 listening test behind the `ef_dora` choice, described in [Voice selection](#voice-selection).
 
-> **Note for anyone cloning this.** Stages 2 and 4 need an NVIDIA GPU with ≥12 GB VRAM plus locally downloaded Ollama and Kokoro models, and stage 3 needs your own paid Anthropic API key. There is no free clone-and-run path to a finished episode. What *does* run anywhere, with nothing installed beyond `requirements-dev.txt`: the entire test suite, stage 1 (RSS collection), and stage 5 (feed generation). See [Setup](#setup-a--no-gpu-development-only).
+### Run it yourself, in about thirty seconds
+
+No API key, no GPU, no model downloads, no network:
+
+```bash
+git clone git@github.com:JoaoCarlos134/News_radio.git && cd News_radio
+pip install -r requirements-dev.txt
+python -m podcast.cli demo
+```
+
+`demo` runs the **real** pipeline code over committed fixtures and writes a genuine `feed.xml` you can subscribe to locally. It builds the actual stage 3 prompt and shows you the word budget it computes without sending it, plans the real stage 4 TTS segmentation without synthesising, and generates the feed through stage 5's real code path with a no-op pusher. Only the three calls that cost money or need hardware are stubbed — everything else is the code that runs in production.
+
+> **To run the pipeline for real** you need an NVIDIA GPU with ≥12 GB VRAM plus locally downloaded Ollama and Kokoro models (stages 2 and 4), and your own paid Anthropic API key (stage 3). See [Setup](#setup).
 
 ---
 
@@ -65,7 +77,7 @@ Each stage reads the previous stage's JSON from `data/` and writes its own, so a
 
 ### Why the dependency injection matters
 
-Stage 1 takes a `fetcher`, stages 2 and 3 take a `client`, stage 4 takes an `engine`, stage 5 takes a `pusher`. Each defaults to the real implementation and is overridden in tests. The payoff is concrete: **no test touches the network, spends a cent of API credit, or requires a GPU**, so the project stays fully developable on a machine that cannot actually run it. Tests needing the optional audio stack degrade via `pytest.importorskip` rather than failing.
+Stage 1 takes a `fetcher`, stages 2 and 3 take a `client`, stage 4 takes an `engine`, stage 5 takes a `pusher`. Each defaults to the real implementation and is overridden in tests. The payoff is concrete: **no test touches the network, spends a cent of API credit, or requires a GPU.** That is what lets CI verify the whole pipeline on a bare Linux runner with no GPU and no secrets, and what makes `demo` possible at all — it swaps the three external calls for fixtures and still runs every other line of real code. Tests needing the optional audio stack degrade via `pytest.importorskip` rather than failing.
 
 A separate test, `TestSemCaminhosAbsolutosNoCodigo`, fails the build if any absolute machine path (`C:\Users`, `/home/`, `/Users/`, `OneDrive`) appears in the package — enforcing that a fresh clone works without editing code.
 
@@ -92,57 +104,11 @@ Change `SCRIPT_MODEL` in `.env` to switch.
 
 ## Setup
 
-> ⚠️ **Two machines, both for development.** The code is developed on *both*; the repo is synced by git and either can write code, run tests and commit. The difference is only what each can **execute**, and which one actually runs the pipeline overnight.
+This runs on one machine: an **NVIDIA GPU with at least 12 GB VRAM** for stages 2 and 4, plus a paid Anthropic API key for stage 3. Follow in order.
 
-| | No-GPU machine | RTX 4070 machine |
-|---|---|---|
-| Hardware | no GPU | RTX 4070, 12 GB VRAM |
-| Development | yes | yes |
-| Runs the nightly pipeline | no | **yes** |
-| Installs | `requirements-dev.txt` | `requirements.txt` + `requirements-dev.txt` |
-| Stages it can execute | 1, 3, 5 and the tests | all |
-| Ollama / Kokoro | no | yes |
+> **Only want to run the tests, the demo, or stage 1?** `pip install -r requirements-dev.txt` is enough — no GPU, no key, no model downloads, nothing to configure. That is exactly what CI installs. From such an install you can also exercise the paid stage 3 alone with `script --from-raw data/raw/YYYY-MM-DD.json`, which skips stage 2's triage — handy for testing the API call, but not the production path, since script quality drops without triage.
 
-The tests run on both — that is what keeps development possible on the machine without a GPU. Preserve the dependency injection described above when changing any stage, so the suite stays green on both sides.
-
-### Setup A — no GPU (development only)
-
-```bash
-git clone git@github.com:JoaoCarlos134/News_radio.git
-cd News_radio
-python -m venv .venv
-.venv\Scripts\activate
-pip install -r requirements-dev.txt
-```
-
-Run the tests — all pass with no GPU, no network and no API key:
-
-```bash
-python -m pytest
-```
-
-Collect real news (stage 1 needs no credentials at all):
-
-```bash
-python -m podcast.cli collect --dry-run
-```
-
-To exercise **stage 3** from here, copy `.env.example` to `.env` and fill in only `ANTHROPIC_API_KEY`. Everything else can stay blank.
-
-```bash
-python -m podcast.cli collect
-python -m podcast.cli script --from-raw data/raw/YYYY-MM-DD.json --show
-```
-
-`--from-raw` skips stage 2 (which needs a GPU) and feeds the script directly from the raw collection. It's for testing the paid API call here; **it is not the production path** — without stage 2's triage, script quality drops.
-
-> **Don't try here:** installing Ollama, downloading LLM weights, installing Kokoro, or running `summarize` / `audio`. Without a GPU those stages won't execute — which doesn't prevent developing them here: write the code and tests against the injected client, and validate real execution on the 4070.
-
-### Setup B — RTX 4070 (development + production)
-
-Complete setup: develops like the other machine **and** runs the nightly pipeline. Follow in order.
-
-#### 1. Repository and dependencies
+### 1. Repository and dependencies
 
 > **Use Python 3.13.** `kokoro-onnx` (stage 4) still declares `Requires-Python >=3.10,<3.14`, so on a 3.14 venv `pip install -r requirements.txt` fails at `kokoro-onnx`. Stages 1, 2, 3 and 5 work on 3.14; stage 4 does not.
 >
@@ -156,7 +122,7 @@ py -3.13 -m venv .venv
 pip install -r requirements.txt -r requirements-dev.txt
 ```
 
-#### 2. ffmpeg (required to export mp3)
+### 2. ffmpeg (required to export mp3)
 
 `pydub` needs ffmpeg on PATH. On Windows, with winget:
 
@@ -165,7 +131,7 @@ winget install Gyan.FFmpeg
 ffmpeg -version   # open a new terminal after installing
 ```
 
-#### 3. Ollama + local model (stage 2)
+### 3. Ollama + local model (stage 2)
 
 Install Ollama from <https://ollama.com/download>, then pull the model. Qwen 2.5 14B and Llama 3.1 8B both fit in the 4070's 12 GB:
 
@@ -176,7 +142,7 @@ ollama list   # confirm the service responds
 
 If you choose another model, set `OLLAMA_MODEL` in `.env`.
 
-#### 4. Kokoro TTS (stage 4)
+### 4. Kokoro TTS (stage 4)
 
 Download both model files into `models/` at the repo root (it's gitignored — the files never reach git):
 
@@ -185,7 +151,7 @@ Download both model files into `models/` at the repo root (it's gitignored — t
 
 Both are in the project's releases: <https://github.com/thewh1teagle/kokoro-onnx/releases>
 
-##### Voice selection
+#### Voice selection
 
 Kokoro v1.0's Brazilian Portuguese voices are `pf_dora` (female), `pm_alex` and `pm_santa` (male), configured via `KOKORO_VOICE_MARIA` and `KOKORO_VOICE_PEDRO`.
 
@@ -202,11 +168,11 @@ Kokoro v1.0's Brazilian Portuguese voices are `pf_dora` (female), `pm_alex` and 
 
 English voices were also trialled and rejected: they're better voices, but they mispronounce exactly the proper nouns that dominate the programme (Ibovespa, Selic, Copom, Petrobras). Trading synthetic timbre for a wrong pronunciation in every sentence isn't a good deal.
 
-#### 5. Paid API key (stage 3)
+### 5. Paid API key (stage 3)
 
 Create a key at <https://console.anthropic.com/settings/keys> and put it in `.env`.
 
-#### 6. Publication — GitHub Pages (stage 5)
+### 6. Publication — GitHub Pages (stage 5)
 
 `data/public/` holds the published `feed.xml` and mp3s, and must already be a git checkout of a `gh-pages` branch. Stage 5 only does `git add/commit/push` on it — it never creates the branch itself, since that's one-time manual configuration, not something to run blind at 5 a.m.
 
@@ -225,7 +191,7 @@ Then enable **Settings → Pages → Source → Deploy from a branch → `gh-pag
 
 The feed keeps the most recent `MAX_EPISODES_IN_FEED` (30) episodes and deletes older mp3s, so the published repo stays small.
 
-#### 7. Configuration
+### 7. Configuration
 
 ```bash
 cp .env.example .env
@@ -242,7 +208,7 @@ Edit `.env` — `.env.example` documents every variable. The minimum:
 
 The Kokoro paths already point at `./models/` and resolve from the repo root — **don't use absolute paths** in `.env`.
 
-#### 8. Verify everything at once
+### 8. Verify everything at once
 
 ```bash
 python -m podcast.cli doctor
@@ -266,6 +232,8 @@ python -m podcast.cli audio           # stage 4  (needs Kokoro)
 python -m podcast.cli publish         # stage 5
 
 python -m podcast.cli run             # all five in order — this is what the scheduler calls
+
+python -m podcast.cli demo            # the whole thing over fixtures; no key, GPU or network
 ```
 
 Useful flags: `collect --dry-run` (print without saving or marking as seen), `script --from-raw FILE` (skip stage 2), `script --show` (print the generated script), `-v` (verbose logging).
@@ -299,7 +267,8 @@ podcast/
   stage5_publish.py    stage 5 — injected `pusher`
   cli.py               command-line interface
 
-tests/                 217 tests; no network, no API key, no GPU required
+tests/                 221 tests; no network, no API key, no GPU required
+demo/                  fixtures for `podcast demo` — real stage 2 and 3 output, trimmed
 .github/workflows/     CI — runs the suite on Python 3.11, 3.12 and 3.13
 docs/sample-voice.mp3  the audio sample linked at the top of this README
 docs/voices/           the six candidates from the voice listening test

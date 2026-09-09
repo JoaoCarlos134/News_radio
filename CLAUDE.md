@@ -8,12 +8,13 @@ README.md for setup and the cost table.
 ## Commands
 
 ```bash
-python -m pytest                                  # 217 tests, none touch the network
+python -m pytest                                  # 221 tests, none touch the network
 python -m podcast.cli doctor                      # what is installed/configured, runs no stage
 python -m podcast.cli sources --check             # which feeds respond right now
 python -m podcast.cli collect --dry-run           # stage 1, prints without saving
 python -m podcast.cli script --from-raw FILE --show  # stage 3 without a GPU
 python -m podcast.cli run                         # all five — this is what the scheduler calls
+python -m podcast.cli demo                        # the pipeline over fixtures; no key, GPU or network
 ```
 
 ## The one architectural invariant
@@ -25,10 +26,10 @@ in tests.
 
 This is not a style preference — it is the only reason the project is
 developable at all. The pipeline needs a 12 GB GPU, a paid API key and a
-network; the whole 217-test suite needs none of them and finishes in under a
+network; the whole 221-test suite needs none of them and finishes in under a
 second. A stage that reaches for its dependency by import instead of accepting
-it as an argument breaks development on the no-GPU machine, and the breakage is
-silent until someone tries to run the tests there.
+it as an argument breaks CI and breaks `demo`, and neither failure shows up on
+the machine that has the GPU, the key and the models already installed.
 
 If a new stage cannot be expressed this way, the seam is wrong and should be
 fixed rather than worked around.
@@ -159,17 +160,22 @@ mangles the first accented character. Pass `encoding="utf-8"` explicitly on ever
 **Never write an absolute path into the package.** `TestSemCaminhosAbsolutosNoCodigo`
 fails the build if `C:\Users`, `/home/`, `/Users/` or `OneDrive` appears in
 `podcast/`. Paths in `.env` are relative and resolved from the repo root, because
-the requirement is that a fresh clone runs on the other machine without editing
-code.
+the requirement is that a fresh clone runs anywhere without editing code -- on
+the CI runner and on a stranger's laptop, not just here.
 
 **`data/` and `models/` never enter git.** Generated episodes, the seen-cache and
 the Kokoro weights are all gitignored. The one deliberate exception is
-`docs/sample-voice.mp3` and `docs/voices/`, whitelisted for the README.
+`docs/sample-voice.mp3` and `docs/voices/`, whitelisted for the README, plus
+`demo/`, which holds trimmed real stage 2 and stage 3 output so `demo` has
+something to run on.
 
-**Both machines develop; only one runs the pipeline.** The no-GPU machine
-installs `requirements-dev.txt` and can execute stages 1, 3, 5 and the whole
-test suite. The RTX 4070 machine installs everything and runs production. Tests
-must stay green on both — that is what the injected clients buy.
+**One machine runs everything, but nothing may assume that.** Production is a
+single RTX 4070 box. The injected clients are still non-negotiable, because the
+things that depend on them are not this machine: CI runs the suite on a bare
+Linux runner with no GPU and no secrets, and `podcast demo` reproduces the
+pipeline from a fresh clone with no credentials at all. A stage that imports its
+dependency instead of accepting it breaks both, and neither failure shows up
+here.
 
 ---
 
