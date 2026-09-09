@@ -1,17 +1,18 @@
-"""Registro das fontes RSS da etapa 1.
+"""Stage 1 RSS source registry.
 
-Todas as URLs abaixo foram verificadas em 2026-08-03 (contagem de itens obtida
-de fato). Feeds mudam sem aviso — rode `python -m podcast.cli sources --check`
-antes de commitar qualquer mudanca aqui.
+Every URL below was verified by actually fetching it and counting items, last
+on 2026-09-09. Feeds change without notice -- run
+`python -m podcast.cli sources --check` before committing any change here.
 
-O pipeline usa apenas manchete + resumo publicado no proprio feed, nunca o texto
-integral do artigo (ver CLAUDE.md, restricao de copyright). Por isso feeds de
-veiculos com paywall sao aceitaveis: so consumimos o que o feed publica aberto.
+The pipeline uses only the headline and the summary the feed itself publishes,
+never the full article text (see CLAUDE.md, copyright constraint). That is why
+paywalled outlets are acceptable sources: we consume only what the feed serves
+openly.
 
-NOTA sobre erros de TLS em rede corporativa: em maquinas atras de um proxy com
-inspecao TLS, `sources --check` pode acusar CERTIFICATE_VERIFY_FAILED em varios
-feeds que estao perfeitamente no ar. Isso e da rede, nao do feed. Verifique numa
-conexao domestica antes de desabilitar qualquer fonte.
+NOTE on TLS errors: behind a proxy that inspects TLS, `sources --check` can
+report CERTIFICATE_VERIFY_FAILED for feeds that are perfectly healthy. That is
+the network, not the feed. Confirm from an unfiltered connection before
+disabling any source on TLS evidence alone.
 """
 
 from __future__ import annotations
@@ -21,19 +22,19 @@ from dataclasses import dataclass
 
 @dataclass(frozen=True)
 class FeedSource:
-    key: str            # identificador estavel, usado em logs e no cache
-    name: str           # nome legivel do veiculo, citado no roteiro
+    key: str            # stable identifier, used in logs and in the seen-cache
+    name: str           # human-readable outlet name, cited in the script
     url: str
     categories: tuple[str, ...] = ()
     enabled: bool = True
 
 
 FEED_SOURCES: tuple[FeedSource, ...] = (
-    # --- Economia e mercado -------------------------------------------------
+    # --- Economy and markets ------------------------------------------------
     FeedSource(
-        # Os feeds por categoria do InfoMoney (/mercados/feed/, /economia/feed/)
-        # respondem 200 com um canal RSS valido porem VAZIO. Só o feed principal
-        # traz itens. Verificado em 2026-08-03.
+        # InfoMoney's per-category feeds (/mercados/feed/, /economia/feed/)
+        # return 200 with a valid but EMPTY RSS channel. Only the main feed
+        # carries items. Verified 2026-08-03, still true 2026-09-09.
         key="infomoney",
         name="InfoMoney",
         url="https://www.infomoney.com.br/feed/",
@@ -70,7 +71,7 @@ FEED_SOURCES: tuple[FeedSource, ...] = (
         categories=("mercado", "economia"),
     ),
 
-    # --- Geopolitica e internacional ----------------------------------------
+    # --- Geopolitics and international ---------------------------------------
     FeedSource(
         key="bbc_brasil",
         name="BBC News Brasil",
@@ -96,10 +97,10 @@ FEED_SOURCES: tuple[FeedSource, ...] = (
         categories=("geopolitica", "mundo"),
     ),
 
-    # --- Fontes oficiais / institucionais -----------------------------------
-    # A Agência Brasil (EBC) e a fonte oficial que sobreviveu a verificacao. Ela
-    # cobre divulgacoes do IBGE e do Banco Central, o que compensa em parte os
-    # tres feeds institucionais desabilitados abaixo.
+    # --- Official / institutional sources -------------------------------------
+    # Agencia Brasil (EBC) is the official source that survived verification. It
+    # covers IBGE and Central Bank releases, which partly compensates for the
+    # three institutional feeds disabled below.
     FeedSource(
         key="agencia_brasil_economia",
         name="Agência Brasil",
@@ -113,13 +114,15 @@ FEED_SOURCES: tuple[FeedSource, ...] = (
         categories=("geopolitica", "mundo", "oficial"),
     ),
 
-    # --- Desabilitadas: verificadas e nao utilizaveis hoje -------------------
-    # Mantidas no registro (em vez de apagadas) para nao serem re-tentadas as
-    # cegas no futuro. Cada uma diz o motivo.
+    # --- Disabled: verified and not usable ------------------------------------
+    # Kept in the registry rather than deleted, so nobody retries them blind in
+    # six months. Each one records why. Rechecked 2026-09-09; all three still
+    # fail in exactly the way described.
     FeedSource(
-        # O Banco Central nao publica RSS. O endpoint /api/servico/sitebcb/noticias
-        # responde 200 mas devolve JSON, nao RSS; /api/feed/sitebcb/noticias da 400.
-        # Consumir exigiria um adaptador JSON->NewsItem proprio na etapa 1.
+        # The Central Bank publishes no RSS. /api/servico/sitebcb/noticias
+        # returns 200 but serves JSON, not RSS, so it parses to 0 items;
+        # /api/feed/sitebcb/noticias returns 400. Consuming it would need a
+        # dedicated JSON->NewsItem adapter in stage 1.
         key="bcb_noticias",
         name="Banco Central do Brasil",
         url="https://www.bcb.gov.br/api/servico/sitebcb/noticias",
@@ -127,8 +130,8 @@ FEED_SOURCES: tuple[FeedSource, ...] = (
         enabled=False,
     ),
     FeedSource(
-        # Protegido por desafio do Cloudflare: responde 403 com "Just a moment...".
-        # Nao ha como consumir com um leitor RSS comum.
+        # Behind a Cloudflare challenge: responds 403 with "Just a moment...".
+        # Not consumable by an ordinary RSS reader.
         key="ibge_noticias",
         name="IBGE",
         url="https://agenciadenoticias.ibge.gov.br/agencia-noticias/2012-agencia-de-noticias/noticias.rss",
@@ -136,8 +139,10 @@ FEED_SOURCES: tuple[FeedSource, ...] = (
         enabled=False,
     ),
     FeedSource(
-        # Handshake TLS falha e a conexao e resetada, em https e http.
-        # Pode ser bloqueio do proxy corporativo — revalidar no PC de casa.
+        # TLS handshake fails: SSLV3_ALERT_HANDSHAKE_FAILURE, on https and http.
+        # Retested 2026-09-09 from an unfiltered connection and it fails
+        # identically, so this is the server's TLS configuration, not a network
+        # in the way. Nothing to do at this end.
         key="fgv_ibre",
         name="FGV IBRE",
         url="https://portalibre.fgv.br/rss/noticias",
