@@ -225,7 +225,7 @@ def publish_episode(
 
 
 def check_publish_setup(config: PublishConfig) -> tuple[bool, str]:
-    """Confere se a configuracao minima de publicacao esta preenchida."""
+    """Check that the minimum publication settings are filled in."""
     faltando = [
         nome for nome, valor in (
             ("PODCAST_BASE_URL", config.base_url),
@@ -234,7 +234,7 @@ def check_publish_setup(config: PublishConfig) -> tuple[bool, str]:
         ) if not valor
     ]
     if faltando:
-        return False, "Variáveis não preenchidas no .env: " + ", ".join(faltando)
+        return False, "Not set in .env: " + ", ".join(faltando)
     if not config.base_url.startswith(("http://", "https://")):
-        return False, f"PODCAST_BASE_URL deve ser uma URL absoluta: {config.base_url!r}"
-    return True, f"Publicação configurada para {config.base_url}"
+        return False, f"PODCAST_BASE_URL must be an absolute URL: {config.base_url!r}"
+    return True, f"Publishing to {config.base_url}"

@@ -1,15 +1,15 @@
-"""Interface de linha de comando do pipeline.
+"""Command-line interface for the pipeline.
 
-    python -m podcast.cli doctor          # diagnostica o ambiente atual
-    python -m podcast.cli collect         # etapa 1 (roda em qualquer maquina)
-    python -m podcast.cli summarize       # etapa 2 (exige GPU/Ollama)
-    python -m podcast.cli script          # etapa 3 (exige ANTHROPIC_API_KEY)
-    python -m podcast.cli audio           # etapa 4 (exige Kokoro)
-    python -m podcast.cli publish         # etapa 5
-    python -m podcast.cli run             # tudo, na ordem — uso do agendador
+    python -m podcast.cli doctor          # diagnose the current environment
+    python -m podcast.cli collect         # stage 1 (runs on any machine)
+    python -m podcast.cli summarize       # stage 2 (needs GPU/Ollama)
+    python -m podcast.cli script          # stage 3 (needs ANTHROPIC_API_KEY)
+    python -m podcast.cli audio           # stage 4 (needs Kokoro)
+    python -m podcast.cli publish         # stage 5
+    python -m podcast.cli run             # all five in order — the scheduler's entry point
 
-`doctor` e o comando a rodar primeiro no PC de destino: diz exatamente o que
-ainda falta instalar, sem executar nenhuma etapa.
+`doctor` is the first command to run on a new machine: it reports exactly what
+is still missing, without executing any stage.
 """
 
 from __future__ import annotations
@@ -32,7 +32,7 @@ def _setup_logging(verbose: bool) -> None:
 
 
 def _latest(directory: Path) -> Path | None:
-    """Arquivo JSON mais recente de uma pasta de etapa."""
+    """Most recent JSON file in a stage output directory."""
     if not directory.exists():
         return None
     arquivos = sorted(directory.glob("*.json"))
@@ -40,7 +40,7 @@ def _latest(directory: Path) -> Path | None:
 
 
 # --------------------------------------------------------------------------- #
-# Comandos
+# Commands
 # --------------------------------------------------------------------------- #
 
 def cmd_doctor(config: Config, args: argparse.Namespace) -> int:
@@ -48,52 +48,52 @@ def cmd_doctor(config: Config, args: argparse.Namespace) -> int:
     from .stage4_audio import check_audio_setup
     from .stage5_publish import check_publish_setup
 
-    print("Diagnóstico do ambiente\n" + "=" * 40)
-    print(f"Raiz do projeto : {config.data_dir.parent}")
-    print(f"Pasta de dados  : {config.data_dir}")
+    print("Environment check\n" + "=" * 40)
+    print(f"Project root   : {config.data_dir.parent}")
+    print(f"Data directory : {config.data_dir}")
     print()
 
     tudo_ok = True
 
-    # Etapa 1 — sem dependencia externa
+    # Stage 1 - no external dependency
     try:
         import feedparser  # noqa: F401
         import requests  # noqa: F401
-        print("[ok]    etapa 1 (RSS)      feedparser e requests instalados")
+        print("[ok]    stage 1 (RSS)      feedparser and requests installed")
     except ImportError as exc:
         tudo_ok = False
-        print(f"[FALHA] etapa 1 (RSS)      {exc}")
+        print(f"[FAIL]  stage 1 (RSS)      {exc}")
 
-    # Etapa 2 — Ollama
+    # Stage 2 - Ollama
     ok, msg = check_ollama(config.ollama)
     tudo_ok &= ok
-    print(f"[{'ok' if ok else 'FALHA'}]{'    ' if ok else ' '}etapa 2 (Ollama)   {msg.splitlines()[0]}")
+    print(f"[{'ok' if ok else 'FAIL'}]{'    ' if ok else '  '}stage 2 (Ollama)   {msg.splitlines()[0]}")
     if not ok:
         for linha in msg.splitlines()[1:]:
             print(f"                           {linha}")
 
-    # Etapa 3 — API paga
+    # Stage 3 - paid API
     if config.script.api_key:
-        print(f"[ok]    etapa 3 (API)      chave presente, modelo {config.script.model}")
+        print(f"[ok]    stage 3 (API)      key present, model {config.script.model}")
     else:
         tudo_ok = False
-        print("[FALHA] etapa 3 (API)      ANTHROPIC_API_KEY não definida no .env")
+        print("[FAIL]  stage 3 (API)      ANTHROPIC_API_KEY not set in .env")
 
-    # Etapa 4 — Kokoro
+    # Stage 4 - Kokoro
     ok, msg = check_audio_setup(config.audio)
     tudo_ok &= ok
-    print(f"[{'ok' if ok else 'FALHA'}]{'    ' if ok else ' '}etapa 4 (Kokoro)   {msg.splitlines()[0]}")
+    print(f"[{'ok' if ok else 'FAIL'}]{'    ' if ok else '  '}stage 4 (Kokoro)   {msg.splitlines()[0]}")
     if not ok:
         for linha in msg.splitlines()[1:]:
             print(f"                           {linha}")
 
-    # Etapa 5 — publicacao
+    # Stage 5 - publication
     ok, msg = check_publish_setup(config.publish)
     tudo_ok &= ok
-    print(f"[{'ok' if ok else 'FALHA'}]{'    ' if ok else ' '}etapa 5 (feed)     {msg}")
+    print(f"[{'ok' if ok else 'FAIL'}]{'    ' if ok else '  '}stage 5 (feed)     {msg}")
 
     print()
-    print("Tudo pronto." if tudo_ok else "Há pendências acima. Ver README.")
+    print("All set." if tudo_ok else "Unresolved items above. See README.")
     return 0 if tudo_ok else 1
 
 
@@ -110,9 +110,9 @@ def cmd_sources(config: Config, args: argparse.Namespace) -> int:
         try:
             raw = fetch_feed(source, config.collect.timeout)
             n = len(parse_feed(source, raw))
-            print(f"[ok]    {source.key:32} {n:3} itens")
+            print(f"[ok]    {source.key:32} {n:3} items")
         except Exception as exc:
-            print(f"[FALHA] {source.key:32} {exc}")
+            print(f"[FAIL]  {source.key:32} {exc}")
     return 0
 
 
@@ -134,10 +134,10 @@ def cmd_collect(config: Config, args: argparse.Namespace) -> int:
         seen.mark(collection.items)
         seen.save()
 
-    print(f"\n{len(collection.items)} notícias coletadas "
-          f"(janela de {collection.window_hours}h)")
+    print(f"\n{len(collection.items)} items collected "
+          f"({collection.window_hours}h window)")
     if collection.errors:
-        print(f"{len(collection.errors)} feed(s) com erro:")
+        print(f"{len(collection.errors)} feed(s) failed:")
         for erro in collection.errors:
             print(f"  - {erro.source_key}: {erro.message}")
 
@@ -146,11 +146,11 @@ def cmd_collect(config: Config, args: argparse.Namespace) -> int:
             quando = item.published_at.strftime("%d/%m %H:%M") if item.published_at else "  —   "
             print(f"  {quando}  [{item.source_name}] {item.title}")
         if len(collection.items) > 20:
-            print(f"  ... e mais {len(collection.items) - 20}")
+            print(f"  ... and {len(collection.items) - 20} more")
         return 0
 
     path = save_collection(collection, config.raw_dir)
-    print(f"Gravado em {path}")
+    print(f"Saved to {path}")
     return 0
 
 
@@ -161,12 +161,12 @@ def cmd_summarize(config: Config, args: argparse.Namespace) -> int:
     explicito = getattr(args, "input", None)
     entrada = Path(explicito) if explicito else _latest(config.raw_dir)
     if entrada is None:
-        print("Nenhuma coleta encontrada. Rode `collect` primeiro.", file=sys.stderr)
+        print("No collection found. Run `collect` first.", file=sys.stderr)
         return 1
 
     digest = summarize(load_collection(entrada), config.ollama)
     path = save_digest(digest, config.summaries_dir)
-    print(f"{len(digest.items)} itens após triagem. Gravado em {path}")
+    print(f"{len(digest.items)} items after triage. Saved to {path}")
     return 0
 
 
@@ -183,13 +183,13 @@ def cmd_script(config: Config, args: argparse.Namespace) -> int:
 
     if from_raw:
         entrada = Path(from_raw)
-        print(f"Modo de teste: usando a coleta bruta {entrada} (sem triagem da etapa 2)")
+        print(f"Test mode: using raw collection {entrada} (skipping stage 2 triage)")
         digest = digest_from_collection_file(entrada)
     else:
         entrada = Path(explicito) if explicito else _latest(config.summaries_dir)
         if entrada is None:
-            print("Nenhum digest encontrado. Rode `summarize` primeiro, ou use "
-                  "--from-raw data/raw/AAAA-MM-DD.json para testar sem GPU.",
+            print("No digest found. Run `summarize` first, or use "
+                  "--from-raw data/raw/YYYY-MM-DD.json to test without a GPU.",
                   file=sys.stderr)
             return 1
         digest = load_digest(entrada)
@@ -200,10 +200,10 @@ def cmd_script(config: Config, args: argparse.Namespace) -> int:
     from .stage3_script import estimate_minutes
 
     print(f"\n{script.title}")
-    print(f"{len(script.lines)} falas, {script.word_count} palavras "
+    print(f"{len(script.lines)} lines, {script.word_count} words "
           f"(~{estimate_minutes(script.word_count):.0f} min)")
-    print(f"Temas: {', '.join(script.themes)}")
-    print(f"Gravado em {path}")
+    print(f"Themes: {', '.join(script.themes)}")
+    print(f"Saved to {path}")
 
     if getattr(args, "show", False):
         print()
@@ -219,11 +219,11 @@ def cmd_audio(config: Config, args: argparse.Namespace) -> int:
     explicito = getattr(args, "input", None)
     entrada = Path(explicito) if explicito else _latest(config.scripts_dir)
     if entrada is None:
-        print("Nenhum roteiro encontrado. Rode `script` primeiro.", file=sys.stderr)
+        print("No script found. Run `script` first.", file=sys.stderr)
         return 1
 
     path = synthesize(load_script(entrada), config.audio, config.audio_dir)
-    print(f"Áudio gravado em {path}")
+    print(f"Audio saved to {path}")
     return 0
 
 
@@ -233,22 +233,22 @@ def cmd_publish(config: Config, args: argparse.Namespace) -> int:
 
     roteiro = _latest(config.scripts_dir)
     if roteiro is None:
-        print("Nenhum roteiro encontrado.", file=sys.stderr)
+        print("No script found.", file=sys.stderr)
         return 1
 
     script = load_script(roteiro)
     audio = config.audio_dir / f"{script.episode_date}.mp3"
     if not audio.exists():
-        print(f"Áudio não encontrado: {audio}. Rode `audio` primeiro.", file=sys.stderr)
+        print(f"Audio not found: {audio}. Run `audio` first.", file=sys.stderr)
         return 1
 
     feed = publish_episode(script, audio, config.publish, config.public_dir)
-    print(f"Feed atualizado em {feed}")
+    print(f"Feed updated at {feed}")
     return 0
 
 
 def cmd_run(config: Config, args: argparse.Namespace) -> int:
-    """Pipeline completo. E este o comando que o agendador chama de madrugada."""
+    """The whole pipeline. This is what the overnight scheduler calls."""
     inicio = datetime.now(timezone.utc)
     for nome, funcao in (
         ("collect", cmd_collect),
@@ -260,11 +260,11 @@ def cmd_run(config: Config, args: argparse.Namespace) -> int:
         print(f"\n=== {nome} ===")
         codigo = funcao(config, args)
         if codigo != 0:
-            print(f"Pipeline interrompido na etapa {nome}.", file=sys.stderr)
+            print(f"Pipeline stopped at stage {nome}.", file=sys.stderr)
             return codigo
 
     duracao = (datetime.now(timezone.utc) - inicio).total_seconds()
-    print(f"\nPipeline concluído em {duracao / 60:.1f} min.")
+    print(f"\nPipeline finished in {duracao / 60:.1f} min.")
     return 0
 
 
@@ -275,37 +275,37 @@ def cmd_run(config: Config, args: argparse.Namespace) -> int:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="podcast",
-        description="Pipeline do podcast diário de economia e geopolítica.",
+        description="Daily economy and geopolitics podcast pipeline.",
     )
-    parser.add_argument("-v", "--verbose", action="store_true", help="log detalhado")
+    parser.add_argument("-v", "--verbose", action="store_true", help="verbose logging")
     sub = parser.add_subparsers(dest="command", required=True)
 
-    sub.add_parser("doctor", help="diagnostica o que está instalado e configurado")
+    sub.add_parser("doctor", help="report what is installed and configured")
 
-    p_sources = sub.add_parser("sources", help="lista as fontes RSS configuradas")
+    p_sources = sub.add_parser("sources", help="list the configured RSS sources")
     p_sources.add_argument("--check", action="store_true",
-                           help="baixa cada feed e reporta quais respondem")
+                           help="fetch every feed and report which respond")
 
-    p_collect = sub.add_parser("collect", help="etapa 1 — coleta RSS")
+    p_collect = sub.add_parser("collect", help="stage 1 - RSS collection")
     p_collect.add_argument("--dry-run", action="store_true",
-                           help="mostra na tela sem gravar nem marcar como visto")
+                           help="print without saving or marking as seen")
     p_collect.add_argument("--ignore-seen", action="store_true",
-                           help="não filtra itens de execuções anteriores")
+                           help="do not filter out items from previous runs")
 
-    p_sum = sub.add_parser("summarize", help="etapa 2 — resumo/triagem (Ollama)")
-    p_sum.add_argument("--input", help="arquivo de coleta (padrão: o mais recente)")
+    p_sum = sub.add_parser("summarize", help="stage 2 - summarise/triage (Ollama)")
+    p_sum.add_argument("--input", help="collection file (default: most recent)")
 
-    p_script = sub.add_parser("script", help="etapa 3 — roteiro (API paga)")
-    p_script.add_argument("--input", help="digest (padrão: o mais recente)")
-    p_script.add_argument("--from-raw", metavar="ARQUIVO",
-                          help="pula a etapa 2 e usa a coleta bruta (teste sem GPU)")
-    p_script.add_argument("--show", action="store_true", help="imprime o roteiro")
+    p_script = sub.add_parser("script", help="stage 3 - script (paid API)")
+    p_script.add_argument("--input", help="digest (default: most recent)")
+    p_script.add_argument("--from-raw", metavar="FILE",
+                          help="skip stage 2 and use the raw collection (test without a GPU)")
+    p_script.add_argument("--show", action="store_true", help="print the generated script")
 
-    p_audio = sub.add_parser("audio", help="etapa 4 — áudio (Kokoro)")
-    p_audio.add_argument("--input", help="roteiro (padrão: o mais recente)")
+    p_audio = sub.add_parser("audio", help="stage 4 - audio (Kokoro)")
+    p_audio.add_argument("--input", help="script (default: most recent)")
 
-    sub.add_parser("publish", help="etapa 5 — feed RSS")
-    sub.add_parser("run", help="executa as 5 etapas em sequência")
+    sub.add_parser("publish", help="stage 5 - RSS feed")
+    sub.add_parser("run", help="run all five stages in order")
 
     return parser
 
@@ -330,13 +330,13 @@ def main(argv: list[str] | None = None) -> int:
         config = load_config()
         return COMMANDS[args.command](config, args)
     except ConfigError as exc:
-        print(f"Erro de configuração: {exc}", file=sys.stderr)
+        print(f"Configuration error: {exc}", file=sys.stderr)
         return 2
     except NotImplementedError as exc:
         print(f"{exc}", file=sys.stderr)
         return 3
     except KeyboardInterrupt:
-        print("\nInterrompido.", file=sys.stderr)
+        print("\nInterrupted.", file=sys.stderr)
         return 130
 
 

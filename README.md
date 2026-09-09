@@ -1,361 +1,342 @@
-# Podcast Diário de Economia e Geopolítica
+# News Radio
 
-Pipeline automatizado que roda de madrugada, transforma notícias de economia e
-geopolítica em um episódio de podcast em diálogo entre duas vozes (Maria e Pedro),
-gera o áudio localmente e publica num feed RSS privado para ouvir no app Podcasts
-do iOS.
+[![tests](https://github.com/JoaoCarlos134/News_radio/actions/workflows/tests.yml/badge.svg)](https://github.com/JoaoCarlos134/News_radio/actions/workflows/tests.yml)
+[![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+![python](https://img.shields.io/badge/python-3.11%20%7C%203.12%20%7C%203.13-blue.svg)
 
-As decisões de arquitetura e as restrições do projeto estão em [CLAUDE.md](CLAUDE.md).
+**An automated pipeline that turns each day's economy and geopolitics headlines into a two-voice podcast episode — collected, analysed, narrated and published without a human in the loop.** It runs overnight on a home PC and drops a finished ~19-minute episode into a private RSS feed before breakfast.
+
+### What makes it interesting
+
+Every stage that touches the outside world — the network, a local LLM, the paid API, the TTS engine, the git push — takes its client as an injected parameter. That one constraint is why the **full 217-test suite runs in under a second on a laptop with no GPU, no API key and no network access**, while the same code runs the real pipeline on an RTX 4070. Cost is engineered rather than hoped for: summarisation and text-to-speech run on local models so the only metered call in the whole system is a single script-writing request, and the per-episode economics are **measured from real runs, not estimated** — 4,145 input and 10,141 output tokens, R$27/month against a R$50 budget. The speech-rate constant that sizes each episode was calibrated the same way: 172 words/minute, derived from a complete 18.74-minute episode rather than a short sample, because shorter samples read 15% fast and blew the duration ceiling.
+
+The project also documents what it *rejected*. Claude Haiku 4.5 costs a sixth as much and was tested and turned down for inventing arithmetic; the narrator's voice is `ef_dora` from Kokoro's Spanish pack rather than the Brazilian `pf_dora`, chosen by listening to six variants side by side. Both decisions are recorded with their reasoning, in [Cost](#cost) and [Voice selection](#4-kokoro-tts-stage-4).
+
+### Hear it
+
+▶️ **[27-second sample — the two synthesised voices, Maria and Pedro](docs/sample-voice.mp3)**
+*(327 KB, generated locally by Kokoro — click to play in GitHub's audio viewer.)*
+
+🎧 **[The six voice candidates that decided Maria's voice](docs/voices/)** — the
+listening test behind the `ef_dora` choice, described in [Voice selection](#voice-selection).
+
+> **Note for anyone cloning this.** Stages 2 and 4 need an NVIDIA GPU with ≥12 GB VRAM plus locally downloaded Ollama and Kokoro models, and stage 3 needs your own paid Anthropic API key. There is no free clone-and-run path to a finished episode. What *does* run anywhere, with nothing installed beyond `requirements-dev.txt`: the entire test suite, stage 1 (RSS collection), and stage 5 (feed generation). See [Setup](#setup-a--no-gpu-development-only).
 
 ---
 
-## As 5 etapas
+## Architecture
 
-| # | Etapa | Onde roda | Custo | Status |
-|---|-------|-----------|-------|--------|
-| 1 | Coleta RSS | qualquer máquina | R$0 | **implementada** |
-| 2 | Resumo/triagem (Ollama) | **exige GPU** | R$0 | **implementada** |
-| 3 | Síntese do roteiro (API paga) | qualquer máquina | ~R$0,50/dia | **implementada** |
-| 4 | Áudio (Kokoro TTS) | **exige GPU/modelo** | R$0 | **implementada** |
-| 5 | Publicação do feed | qualquer máquina | R$0 | **implementada** |
+```mermaid
+flowchart TD
+    subgraph ANY["🖥️  Runs on any machine — no GPU"]
+        S1["<b>1 · Collect</b><br/>RSS · 12 feeds<br/><i>feedparser · free</i>"]
+        S3["<b>3 · Script</b><br/>Maria/Pedro dialogue<br/><i>Anthropic API · 💲 PAID</i>"]
+        S5["<b>5 · Publish</b><br/>RSS feed + git push<br/><i>feedgen · free</i>"]
+    end
 
-Cada etapa lê o JSON da anterior e escreve o próprio em `data/`, então dá para
-rodar e inspecionar cada uma isoladamente.
+    subgraph GPU["🎮  Requires RTX 4070 · 12 GB VRAM"]
+        S2["<b>2 · Summarise</b><br/>Triage, dedupe, themes<br/><i>Ollama Qwen2.5 14B · free</i>"]
+        S4["<b>4 · Audio</b><br/>Two-voice TTS + concat<br/><i>Kokoro ONNX · free</i>"]
+    end
+
+    S1 -->|"raw/*.json"| S2
+    S2 -->|"summaries/*.json"| S3
+    S3 -->|"scripts/*.json"| S4
+    S4 -->|"audio/*.mp3"| S5
+    S5 -->|"feed.xml + mp3"| OUT(["📱 Private RSS feed<br/>iOS Podcasts app"])
+
+    style S3 fill:#c8102e,stroke:#7a0a1c,stroke-width:3px,color:#ffffff
+    style OUT fill:#1f6f43,stroke:#0f3d24,stroke-width:2px,color:#ffffff
+    style ANY fill:#eef4fb,stroke:#7aa5d2,color:#12304f
+    style GPU fill:#fff4e6,stroke:#e0993e,color:#5a3708
+```
+
+**The single red box is the only thing that costs money.** Everything else is local or free — which is precisely what makes a two-voice format affordable, since doubling the TTS volume doubles a cost of zero.
+
+Each stage reads the previous stage's JSON from `data/` and writes its own, so any stage can be run and inspected in isolation.
+
+| # | Stage | Where it runs | Cost | Status |
+|---|-------|---------------|------|--------|
+| 1 | RSS collection | any machine | R$0 | **implemented** |
+| 2 | Summarise / triage (Ollama) | **needs GPU** | R$0 | **implemented** |
+| 3 | Script synthesis (paid API) | any machine | ~R$0.90/day | **implemented** |
+| 4 | Audio (Kokoro TTS) | **needs GPU + models** | R$0 | **implemented** |
+| 5 | Feed publication | any machine | R$0 | **implemented** |
+
+### Why the dependency injection matters
+
+Stage 1 takes a `fetcher`, stages 2 and 3 take a `client`, stage 4 takes an `engine`, stage 5 takes a `pusher`. Each defaults to the real implementation and is overridden in tests. The payoff is concrete: **no test touches the network, spends a cent of API credit, or requires a GPU**, so the project stays fully developable on a machine that cannot actually run it. Tests needing the optional audio stack degrade via `pytest.importorskip` rather than failing.
+
+A separate test, `TestSemCaminhosAbsolutosNoCodigo`, fails the build if any absolute machine path (`C:\Users`, `/home/`, `/Users/`, `OneDrive`) appears in the package — enforcing that a fresh clone works without editing code.
 
 ---
 
-## ⚠️ Duas máquinas, ambas de desenvolvimento
+## Cost
 
-O código é desenvolvido nas **duas** máquinas — o repositório é sincronizado por
-Git e qualquer uma delas pode escrever código, rodar os testes e commitar. A
-diferença é só o que cada uma **consegue executar**, e qual delas roda o pipeline
-de verdade de madrugada.
+The project budget is R$50/month. Only stage 3 costs anything.
 
-| | Máquina sem GPU | Máquina com RTX 4070 |
+| Model (`SCRIPT_MODEL`) | Per day | Per month | Note |
+|---|---|---|---|
+| `claude-sonnet-5` | US$0.165 | **~R$27** | **default** — best analysis |
+| `claude-haiku-4-5` | US$0.023 | ~R$4 | tested and rejected, see below |
+
+**Measured, not estimated:** a real episode (4 Aug 2026) consumed 4,145 input and 10,141 output tokens on Sonnet — adaptive thinking is billed as output and accounts for much of that. Converted at R$5.50/US$; *check the exchange rate before treating this as firm.*
+
+> **Haiku costs a sixth as much and isn't worth it.** On the same digest it invented a false arithmetic equivalence ("one point eight percent of a month = two days of work"; it's half a day), varied between 1,753 and 2,614 words across identical runs, and slipped grammatically. In a programme whose entire purpose is explaining economics, a fabricated number is the one defect that can't be accepted. It stays as plan B if the budget tightens.
+
+> **Don't switch to `claude-opus-5`** without redoing the maths: at US$5/US$25 the episode exceeds R$60/month and breaks the budget.
+
+Change `SCRIPT_MODEL` in `.env` to switch.
+
+---
+
+## Setup
+
+> ⚠️ **Two machines, both for development.** The code is developed on *both*; the repo is synced by git and either can write code, run tests and commit. The difference is only what each can **execute**, and which one actually runs the pipeline overnight.
+
+| | No-GPU machine | RTX 4070 machine |
 |---|---|---|
-| Hardware | sem GPU | RTX 4070, 12 GB VRAM |
-| Desenvolvimento | sim | sim |
-| Roda o pipeline em produção (madrugada) | não | **sim** |
-| Instala | `requirements-dev.txt` | `requirements.txt` + `requirements-dev.txt` |
-| Etapas que consegue executar | 1, 3 e os testes | todas |
-| Ollama / Kokoro | não | sim |
+| Hardware | no GPU | RTX 4070, 12 GB VRAM |
+| Development | yes | yes |
+| Runs the nightly pipeline | no | **yes** |
+| Installs | `requirements-dev.txt` | `requirements.txt` + `requirements-dev.txt` |
+| Stages it can execute | 1, 3, 5 and the tests | all |
+| Ollama / Kokoro | no | yes |
 
-Os testes rodam nas duas — é isso que mantém o desenvolvimento possível na
-máquina sem GPU. Ao implementar as etapas 2, 4 e 5, mantenha a injeção de
-dependência (ver [Desenvolvimento](#desenvolvimento)) para que a suíte continue
-verde nos dois lados.
+The tests run on both — that is what keeps development possible on the machine without a GPU. Preserve the dependency injection described above when changing any stage, so the suite stays green on both sides.
 
----
-
-## Setup A — máquina sem GPU (só desenvolvimento)
-
-Aqui você escreve código e roda testes. Nada de GPU, nada de modelos baixados.
+### Setup A — no GPU (development only)
 
 ```bash
 git clone git@github.com:JoaoCarlos134/News_radio.git
 cd News_radio
 python -m venv .venv
-```
-
-Ative o ambiente virtual:
-
-```bash
 .venv\Scripts\activate
-```
-
-Instale as dependências de desenvolvimento:
-
-```bash
 pip install -r requirements-dev.txt
 ```
 
-Rode os testes — todos passam sem GPU, sem rede e sem chave de API:
+Run the tests — all pass with no GPU, no network and no API key:
 
 ```bash
 python -m pytest
 ```
 
-Colete notícias de verdade (etapa 1 não precisa de credencial nenhuma):
+Collect real news (stage 1 needs no credentials at all):
 
 ```bash
 python -m podcast.cli collect --dry-run
 ```
 
-Para exercitar a **etapa 3** daqui, copie o `.env.example` para `.env` e
-preencha só o `ANTHROPIC_API_KEY`. O resto pode ficar em branco.
+To exercise **stage 3** from here, copy `.env.example` to `.env` and fill in only `ANTHROPIC_API_KEY`. Everything else can stay blank.
 
 ```bash
 python -m podcast.cli collect
-python -m podcast.cli script --from-raw data/raw/AAAA-MM-DD.json --show
+python -m podcast.cli script --from-raw data/raw/YYYY-MM-DD.json --show
 ```
 
-`--from-raw` pula a etapa 2 (que exige GPU) e alimenta o roteiro direto com a
-coleta bruta. Serve para testar a chamada da API paga aqui; **não é o caminho de
-produção** — sem a triagem da etapa 2 a qualidade do roteiro cai.
+`--from-raw` skips stage 2 (which needs a GPU) and feeds the script directly from the raw collection. It's for testing the paid API call here; **it is not the production path** — without stage 2's triage, script quality drops.
 
-> **Não tente aqui:** instalar Ollama, baixar modelos de LLM, instalar Kokoro ou
-> rodar `summarize` / `audio`. Sem GPU essas etapas não executam — o que não
-> impede desenvolvê-las aqui: escreva o código e os testes com o cliente
-> injetado, e valide a execução real na máquina com a 4070.
+> **Don't try here:** installing Ollama, downloading LLM weights, installing Kokoro, or running `summarize` / `audio`. Without a GPU those stages won't execute — which doesn't prevent developing them here: write the code and tests against the injected client, and validate real execution on the 4070.
 
----
+### Setup B — RTX 4070 (development + production)
 
-## Setup B — máquina com RTX 4070 (desenvolvimento + produção)
+Complete setup: develops like the other machine **and** runs the nightly pipeline. Follow in order.
 
-Setup completo: desenvolve como a outra máquina **e** roda o pipeline de
-madrugada. Faça na ordem.
+#### 1. Repository and dependencies
 
-### 1. Repositório e dependências
-
-> **Use Python 3.13.** O `kokoro-onnx` (etapa 4) ainda declara
-> `Requires-Python >=3.10,<3.14`, então num venv de Python 3.14 o
-> `pip install -r requirements.txt` falha em `kokoro-onnx`. As etapas 1, 2, 3 e 5
-> funcionam no 3.14; a 4 não.
+> **Use Python 3.13.** `kokoro-onnx` (stage 4) still declares `Requires-Python >=3.10,<3.14`, so on a 3.14 venv `pip install -r requirements.txt` fails at `kokoro-onnx`. Stages 1, 2, 3 and 5 work on 3.14; stage 4 does not.
 >
-> No 3.13 o `pydub` também precisa do backport `audioop-lts` — o módulo
-> `audioop` saiu da stdlib no 3.13 (PEP 594). Já está no
-> `requirements-audio.txt` com marcador de versão, então o `pip install` resolve
-> sozinho; só não estranhe a dependência extra.
+> On 3.13, `pydub` also needs the `audioop-lts` backport — the `audioop` module left the stdlib in 3.13 (PEP 594). It's already in `requirements-audio.txt` with a version marker, so `pip install` resolves it automatically; just don't be surprised by the extra dependency.
 
 ```bash
 git clone git@github.com:JoaoCarlos134/News_radio.git
 cd News_radio
 py -3.13 -m venv .venv
-```
-
-Ative o ambiente e instale **tudo** — produção (inclui áudio) mais as
-ferramentas de desenvolvimento, já que aqui também se escreve código:
-
-```bash
+.venv\Scripts\activate
 pip install -r requirements.txt -r requirements-dev.txt
 ```
 
-### 2. ffmpeg (necessário para exportar mp3)
+#### 2. ffmpeg (required to export mp3)
 
-O `pydub` precisa do ffmpeg no PATH. No Windows, com winget:
+`pydub` needs ffmpeg on PATH. On Windows, with winget:
 
 ```bash
 winget install Gyan.FFmpeg
+ffmpeg -version   # open a new terminal after installing
 ```
 
-Confirme que está no PATH (abra um terminal novo depois de instalar):
+#### 3. Ollama + local model (stage 2)
 
-```bash
-ffmpeg -version
-```
-
-### 3. Ollama + modelo local (etapa 2)
-
-Baixe e instale o Ollama em <https://ollama.com/download>. Depois puxe o modelo.
-O CLAUDE.md sugere Qwen 2.5 14B ou Llama 3.1 8B — ambos cabem nos 12 GB da 4070:
+Install Ollama from <https://ollama.com/download>, then pull the model. Qwen 2.5 14B and Llama 3.1 8B both fit in the 4070's 12 GB:
 
 ```bash
 ollama pull qwen2.5:14b-instruct-q4_K_M
+ollama list   # confirm the service responds
 ```
 
-Confirme que o serviço responde:
+If you choose another model, set `OLLAMA_MODEL` in `.env`.
 
-```bash
-ollama list
-```
+#### 4. Kokoro TTS (stage 4)
 
-Se escolher outro modelo, ajuste `OLLAMA_MODEL` no `.env`.
-
-### 4. Kokoro TTS (etapa 4)
-
-Baixe os dois arquivos do modelo para a pasta `models/` na raiz do repositório
-(ela está no `.gitignore` — os arquivos não vão para o Git):
+Download both model files into `models/` at the repo root (it's gitignored — the files never reach git):
 
 - `kokoro-v1.0.onnx`
 - `voices-v1.0.bin`
 
-Ambos estão nas releases do projeto: <https://github.com/thewh1teagle/kokoro-onnx/releases>
+Both are in the project's releases: <https://github.com/thewh1teagle/kokoro-onnx/releases>
 
-As vozes em português brasileiro do Kokoro v1.0 são `pf_dora` (feminina),
-`pm_alex` e `pm_santa` (masculinas). Estão configuradas em `KOKORO_VOICE_MARIA`
-e `KOKORO_VOICE_PEDRO`.
+##### Voice selection
 
-**A Maria usa `ef_dora`, não `pf_dora`.** É a mesma locutora no pack espanhol do
-Kokoro, com um vetor de estilo melhor treinado; como a fonetização continua
-`pt-br`, os termos brasileiros saem corretos e o timbre soa melhor. Isso foi
-decidido ouvindo seis variantes lado a lado — não troque sem repetir o teste.
+Kokoro v1.0's Brazilian Portuguese voices are `pf_dora` (female), `pm_alex` and `pm_santa` (male), configured via `KOKORO_VOICE_MARIA` and `KOKORO_VOICE_PEDRO`.
 
-### 5. Chave da API paga (etapa 3)
+**Maria uses `ef_dora`, not `pf_dora`.** It's the same voice actor from Kokoro's Spanish pack with a better-trained style vector; because phonemisation stays `pt-br`, Brazilian terms still come out correctly and the timbre is noticeably better. This was decided by listening to six variants side by side — **don't change it without repeating that test.** All six are in [`docs/voices/`](docs/voices/):
 
-Crie a chave em <https://console.anthropic.com/settings/keys> e coloque no `.env`.
+| Clip | Voice | Verdict |
+|---|---|---|
+| [1](docs/voices/1-pf_dora-ptbr.mp3) | `pf_dora` (pt-BR) | the obvious default — sounds artificial |
+| [2](docs/voices/2-pf_dora-ptbr-slower.mp3) | `pf_dora` slowed | slowing it doesn't fix the timbre |
+| [3](docs/voices/3-af_heart-english.mp3) | `af_heart` (en) | better voice, wrong language phonemes |
+| [4](docs/voices/4-af_bella-english.mp3) | `af_bella` (en) | same problem |
+| [5](docs/voices/5-ef_dora-spanish-CHOSEN.mp3) | `ef_dora` (es) | **chosen** — same actor, better style vector |
+| [6](docs/voices/6-blend-dora-heart.mp3) | blend of 1 + 3 | blending degrades both |
 
-### 6. Publicação — GitHub Pages (etapa 5)
+English voices were also trialled and rejected: they're better voices, but they mispronounce exactly the proper nouns that dominate the programme (Ibovespa, Selic, Copom, Petrobras). Trading synthetic timbre for a wrong pronunciation in every sentence isn't a good deal.
 
-O feed (`feed.xml`) e os mp3 publicados ficam em `data/public/`, que precisa
-ser, de antemão, um checkout git da branch `gh-pages` — a etapa 5 só faz
-`git add/commit/push` nela, nunca cria a branch sozinha (isso é configuração
-manual de uma vez, não algo para rodar às cegas de madrugada).
+#### 5. Paid API key (stage 3)
 
-No GitHub: **Settings → Pages → Source → Deploy from a branch → `gh-pages`**
-(a branch pode nem existir ainda; o próximo passo cria).
+Create a key at <https://console.anthropic.com/settings/keys> and put it in `.env`.
 
-Localmente, use um *worktree* — assim `data/public/` é um checkout git normal
-da branch `gh-pages`, mas o resto do repositório continua na `main`:
+#### 6. Publication — GitHub Pages (stage 5)
+
+`data/public/` holds the published `feed.xml` and mp3s, and must already be a git checkout of a `gh-pages` branch. Stage 5 only does `git add/commit/push` on it — it never creates the branch itself, since that's one-time manual configuration, not something to run blind at 5 a.m.
+
+> 🔒 **Host the feed from a separate repository with a non-obvious name.**
+> The feed's only protection is that its URL is hard to guess. If it's served from `gh-pages` on *this* public repo, the URL is `https://<your-user>.github.io/News_radio/feed.xml` — trivially derivable by anyone who can read this page, which defeats the entire privacy model. Publish to a separate, privately-named repo and keep that name out of this one. Set `PODCAST_BASE_URL` in `.env` (which is gitignored) and never hardcode it in tracked files.
+
+Set up the publish target as a *worktree*, so `data/public/` is a normal git checkout of the pages branch while the rest of the repo stays on `main`:
 
 ```bash
-git worktree add --orphan -b gh-pages data/public   # cria a branch vazia, sem tocar na main
-git -C data/public commit --allow-empty -m "Branch inicial do GitHub Pages"
-git -C data/public push -u origin gh-pages
+git worktree add --orphan -b gh-pages data/public
+git -C data/public commit --allow-empty -m "Initial GitHub Pages branch"
+git -C data/public push -u <your-private-feed-remote> gh-pages
 ```
 
-A URL publicada vai ser `https://SEU-USUARIO.github.io/News_radio` — é esse
-valor que entra em `PODCAST_BASE_URL` no `.env` (próximo passo).
+Then enable **Settings → Pages → Source → Deploy from a branch → `gh-pages`** on the hosting repo.
 
-### 7. Configuração
+The feed keeps the most recent `MAX_EPISODES_IN_FEED` (30) episodes and deletes older mp3s, so the published repo stays small.
+
+#### 7. Configuration
 
 ```bash
 cp .env.example .env
 ```
 
-Edite o `.env`. O `.env.example` documenta cada variável. O mínimo a preencher:
+Edit `.env` — `.env.example` documents every variable. The minimum:
 
-| Variável | Para quê |
+| Variable | For |
 |---|---|
-| `ANTHROPIC_API_KEY` | etapa 3 — chave da API paga |
-| `OLLAMA_MODEL` | etapa 2 — só se usar modelo diferente do padrão |
-| `PODCAST_BASE_URL` | etapa 5 — URL do GitHub Pages configurado no passo 6 |
-| `PODCAST_AUTHOR`, `PODCAST_EMAIL` | etapa 5 — metadados do feed |
+| `ANTHROPIC_API_KEY` | stage 3 — paid API key |
+| `OLLAMA_MODEL` | stage 2 — only if using a non-default model |
+| `PODCAST_BASE_URL` | stage 5 — the Pages URL configured in step 6 |
+| `PODCAST_AUTHOR`, `PODCAST_EMAIL` | stage 5 — feed metadata |
 
-Os caminhos do Kokoro já apontam para `./models/` e são resolvidos a partir da
-raiz do repositório — **não use caminhos absolutos** no `.env`.
+The Kokoro paths already point at `./models/` and resolve from the repo root — **don't use absolute paths** in `.env`.
 
-### 8. Verifique tudo de uma vez
+#### 8. Verify everything at once
 
 ```bash
 python -m podcast.cli doctor
 ```
 
-Esse comando não executa nenhuma etapa: só diz o que ainda falta instalar ou
-configurar, etapa por etapa. Rode-o até tudo aparecer como `[ok]`.
+This runs no stage; it only reports what's still missing or unconfigured, stage by stage. Run it until everything shows `[ok]`.
 
 ---
 
-## Uso
+## Usage
 
 ```bash
-python -m podcast.cli doctor      # diagnostica o ambiente
-python -m podcast.cli sources     # lista as fontes RSS
-python -m podcast.cli sources --check   # testa quais feeds respondem agora
+python -m podcast.cli doctor          # diagnose the environment
+python -m podcast.cli sources         # list RSS sources
+python -m podcast.cli sources --check # test which feeds respond right now
 
-python -m podcast.cli collect     # etapa 1
-python -m podcast.cli summarize   # etapa 2  (exige GPU)
-python -m podcast.cli script      # etapa 3  (exige chave de API)
-python -m podcast.cli audio       # etapa 4  (exige Kokoro)
-python -m podcast.cli publish     # etapa 5
+python -m podcast.cli collect         # stage 1
+python -m podcast.cli summarize       # stage 2  (needs GPU)
+python -m podcast.cli script          # stage 3  (needs API key)
+python -m podcast.cli audio           # stage 4  (needs Kokoro)
+python -m podcast.cli publish         # stage 5
 
-python -m podcast.cli run         # as 5 em sequência — é isto que o agendador chama
+python -m podcast.cli run             # all five in order — this is what the scheduler calls
 ```
 
-Flags úteis:
+Useful flags: `collect --dry-run` (print without saving or marking as seen), `script --from-raw FILE` (skip stage 2), `script --show` (print the generated script), `-v` (verbose logging).
 
-- `collect --dry-run` — mostra na tela sem gravar nem marcar como visto
-- `script --from-raw ARQUIVO` — pula a etapa 2 (teste sem GPU)
-- `script --show` — imprime o roteiro gerado
-- `-v` — log detalhado
+### Scheduling (overnight)
+
+On Windows, point Task Scheduler at the venv's Python:
+
+```
+Program:    <repo path>\.venv\Scripts\python.exe
+Arguments:  -m podcast.cli run
+Start in:   <repo path>
+```
+
+Set it to run daily around 5 a.m. with "Run whether user is logged on or not". **"Start in" is mandatory** — without it the relative paths in `.env` don't resolve.
 
 ---
 
-## Custo
-
-O orçamento do projeto é R$50/mês. Só a etapa 3 custa dinheiro.
-
-Preço de tabela por milhão de tokens: `claude-sonnet-5` US$3 entrada / US$15
-saída (promocional US$2 / US$10 até 31/08/2026); `claude-haiku-4-5` US$1 / US$5.
-
-| Modelo (`SCRIPT_MODEL`) | Por dia | Por mês | Observação |
-|---|---|---|---|
-| `claude-sonnet-5` | US$0,165 | **~R$27** | **padrão** — melhor análise |
-| `claude-sonnet-5` (promocional) | US$0,110 | ~R$18 | até 31/08/2026 |
-| `claude-haiku-4-5` | US$0,023 | ~R$4 | testado e rejeitado, ver abaixo |
-
-Números **medidos**, não estimados: um episódio real de 4/ago/2026 consumiu
-4145 tokens de entrada e 10141 de saída no Sonnet (o thinking adaptativo é
-cobrado como saída e responde por boa parte disso). Conversão a R$5,50/US$ —
-**confira o câmbio antes de tratar como firme**.
-
-> **O Haiku custa um sexto e não compensa.** No mesmo digest ele inventou uma
-> equivalência aritmética errada ("um vírgula oito por cento de um mês = dois
-> dias de trabalho"; são meio dia), variou de 1753 a 2614 palavras entre
-> execuções idênticas, e escorregou no português. Num programa que existe para
-> explicar economia, número inventado é o defeito que não dá para aceitar. Fica
-> como plano B se o orçamento apertar.
-
-> **Não troque para `claude-opus-5`** sem refazer a conta: a US$5/US$25 o
-> episódio passa de R$60/mês e estoura o orçamento de R$50.
-
-Para trocar, basta editar `SCRIPT_MODEL` no `.env`.
-
-As etapas 2 e 4 rodam localmente e custam R$0, o que é justamente o motivo de o
-diálogo de duas vozes ser viável (dobra o volume de TTS, mas TTS local é grátis).
-
----
-
-## Automação (madrugada)
-
-No Windows, use o Agendador de Tarefas apontando para o Python do venv:
-
-```
-Programa:   C:\caminho\para\News_radio\.venv\Scripts\python.exe
-Argumentos: -m podcast.cli run
-Iniciar em: C:\caminho\para\News_radio
-```
-
-Configure para rodar diariamente por volta das 5h, com "Executar estando o
-usuário conectado ou não". O campo "Iniciar em" é obrigatório — sem ele os
-caminhos relativos do `.env` não resolvem.
-
----
-
-## Estrutura
+## Project layout
 
 ```
 podcast/
-  config.py          configuração via .env; resolve caminhos a partir da raiz do repo
-  models.py          dataclasses trocadas entre etapas (+ serialização JSON)
-  sources.py         registro das fontes RSS
-  textutils.py       limpeza de HTML, canonicalização de URL, similaridade de título
-  stage1_collect.py  etapa 1 — IMPLEMENTADA
-  stage2_summarize.py  etapa 2 — IMPLEMENTADA
-  stage3_script.py   etapa 3 — IMPLEMENTADA
-  stage4_audio.py    etapa 4 — IMPLEMENTADA
-  stage5_publish.py  etapa 5 — IMPLEMENTADA
-  cli.py             interface de linha de comando
+  config.py            configuration from .env; resolves paths from the repo root
+  models.py            dataclasses passed between stages (+ JSON serialisation)
+  sources.py           RSS source registry
+  textutils.py         HTML cleanup, URL canonicalisation, title similarity
+  stage1_collect.py    stage 1 — injected `fetcher`
+  stage2_summarize.py  stage 2 — injected `client`
+  stage3_script.py     stage 3 — injected `client`
+  stage4_audio.py      stage 4 — injected `engine`
+  stage5_publish.py    stage 5 — injected `pusher`
+  cli.py               command-line interface
 
-tests/               192 testes; rodam sem rede e sem chave de API. Os que
-                     exigem numpy/pydub/ffmpeg se auto-pulam na máquina sem GPU
-data/                saída do pipeline (ignorado pelo Git)
-data/public/         mp3 + feed.xml publicados — checkout git da branch gh-pages
-models/              modelos do Kokoro (ignorado pelo Git)
+tests/                 217 tests; no network, no API key, no GPU required
+.github/workflows/     CI — runs the suite on Python 3.11, 3.12 and 3.13
+docs/sample-voice.mp3  the audio sample linked at the top of this README
+docs/voices/           the six candidates from the voice listening test
+data/                  pipeline output (gitignored)
+data/public/           published mp3 + feed.xml — a git checkout of the pages branch
+models/                Kokoro model files (gitignored)
 ```
 
 ---
 
-## Notas de conteúdo e uso
+## Content and usage notes
 
-- **Copyright.** O pipeline usa apenas manchetes e resumos publicados nos próprios
-  feeds, e sintetiza em linguagem própria. Nunca reproduz texto de artigo original.
-  Isso está codificado no prompt da etapa 3 e no limite de tamanho da etapa 1.
-- **Uso pessoal.** O feed é privado por obscuridade da URL — qualquer um com o
-  link consegue ouvir. Não submeta a URL a diretórios de podcast.
-- **Revisão humana.** O CLAUDE.md prevê revisão leve periódica, não a cada
-  episódio. Vale ouvir alguns episódios por semana e ajustar o prompt da etapa 3.
+- **Copyright.** The pipeline consumes only the headlines and short summaries the feeds themselves publish, and synthesises in its own words. This is enforced two ways, one mechanical and one instructional. Stage 1 *structurally* cannot reproduce article text: it caps each summary at 600 characters, deliberately reads the feed's `summary` field rather than `content` (which often carries the full article), and never fetches the article page at all — there is no scraper in this codebase. Stage 3 reinforces it in the system prompt, which mandates synthesis in the model's own words and forbids reproducing source phrasing verbatim. The stage 1 guarantee is the strong one; the stage 3 rule is a prompt instruction, not a post-generation check.
+- **Personal use.** Brazilian outlets' RSS feeds are free but generally licensed for personal, non-commercial use without modifying the content. This project is built for exactly that: a private feed, unlisted, not republished. Premium wires (Reuters, Bloomberg, FT) are deliberately excluded — their terms don't permit automated use. **If the feed ever became genuinely public, this assessment would need redoing.**
+- **The feed is private only by URL obscurity** — anyone with the link can listen. Don't submit it to podcast directories, and see the hosting note in step 6.
+- **Human review.** Light periodic review, not per-episode: listen to a few episodes a week and adjust the stage 3 prompt.
 
 ---
 
-## Desenvolvimento
+## License
+
+MIT — see [LICENSE](LICENSE).
+
+The licence covers this source code only. It does not license the news content
+the pipeline reads, the Kokoro model weights (Apache 2.0, distributed
+separately), or any generated episode.
+
+---
+
+## Development
 
 ```bash
-python -m pytest              # tudo
-python -m pytest -v           # verboso
+python -m pytest              # everything
+python -m pytest -v           # verbose
 python -m pytest tests/test_stage1_collect.py
 ```
 
-Toda etapa que fala com um serviço externo (rede, Ollama, API paga) recebe o
-cliente por injeção, para que os testes rodem sem esse serviço. Siga esse padrão
-ao implementar as etapas 2, 4 e 5 — é o que mantém a suíte executável na máquina
-de desenvolvimento.
+Every stage that talks to an external service (network, Ollama, paid API, git) receives its client by injection so the tests run without that service. Follow that pattern in any new stage — it's what keeps the suite executable on the development machine.
+
+Architecture decisions and project constraints are recorded in [CLAUDE.md](CLAUDE.md).

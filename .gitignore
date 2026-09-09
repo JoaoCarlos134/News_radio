@@ -8,6 +8,11 @@ output/
 *.mp3
 *.wav
 
+# Exception: the README's audio assets are versioned on purpose (~1.1 MB total).
+# Generated locally by Kokoro; they contain no content from any news source.
+!docs/sample-voice.mp3
+!docs/voices/*.mp3
+
 # Modelos locais (Kokoro/Ollama) — baixados no PC de destino
 models/
 *.onnx

@@ -248,27 +248,26 @@ def synthesize(
 
 
 def check_audio_setup(config: AudioConfig) -> tuple[bool, str]:
-    """Confere pre-requisitos da etapa 4 sem sintetizar nada.
+    """Check stage 4 prerequisites without synthesising anything.
 
-    E o diagnostico a rodar na maquina com a GPU antes de gastar minutos de
-    sintese.
+    Run this on the GPU machine before spending minutes on synthesis.
     """
     problemas: list[str] = []
 
-    for rotulo, caminho in (("modelo", config.model_path), ("vozes", config.voices_path)):
+    for rotulo, caminho in (("model", config.model_path), ("voices", config.voices_path)):
         if not caminho.exists():
-            problemas.append(f"arquivo de {rotulo} não encontrado: {caminho}")
+            problemas.append(f"{rotulo} file not found: {caminho}")
 
     if shutil.which("ffmpeg") is None:
-        problemas.append("ffmpeg não está no PATH (necessário para exportar mp3)")
+        problemas.append("ffmpeg is not on PATH (required to export mp3)")
 
     try:
         import kokoro_onnx  # noqa: F401
     except ImportError:
         problemas.append(
-            "pacote kokoro-onnx não instalado (pip install -r requirements-audio.txt)"
+            "kokoro-onnx not installed (pip install -r requirements-audio.txt)"
         )
 
     if problemas:
-        return False, "Etapa 4 não está pronta:\n  - " + "\n  - ".join(problemas)
-    return True, "Kokoro OK: modelo, vozes e ffmpeg encontrados."
+        return False, "Stage 4 is not ready:\n  - " + "\n  - ".join(problemas)
+    return True, "Kokoro OK: model, voices and ffmpeg found."

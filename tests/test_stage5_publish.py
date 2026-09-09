@@ -29,7 +29,7 @@ NS = {"itunes": "http://www.itunes.com/dtds/podcast-1.0.dtd"}
 @pytest.fixture
 def publish_config() -> PublishConfig:
     return PublishConfig(
-        base_url="https://joaocarlos134.github.io/News_radio",
+        base_url="https://exemplo.github.io/meu-podcast",
         title="Economia e Geopolítica — Diário",
         author="João",
         email="voce@exemplo.com",
@@ -291,7 +291,7 @@ class TestCheckPublishSetup:
         assert "PODCAST_BASE_URL" in msg
 
     def test_base_url_relativa_e_erro(self):
-        config = PublishConfig(base_url="joaocarlos134.github.io/News_radio", author="J", email="j@ex.com")
+        config = PublishConfig(base_url="exemplo.github.io/meu-podcast", author="J", email="j@ex.com")
         ok, msg = check_publish_setup(config)
         assert not ok
-        assert "absoluta" in msg
+        assert "absolute" in msg

@@ -403,10 +403,10 @@ def extract_themes(items: list[SummarizedItem], client) -> list[str]:  # noqa: A
 
 
 def check_ollama(config: OllamaConfig) -> tuple[bool, str]:
-    """Verifica se o Ollama esta no ar e se o modelo configurado esta baixado.
+    """Check that Ollama is up and the configured model is pulled.
 
-    E o primeiro comando a rodar na maquina com a GPU para confirmar o setup, e
-    nao depende do resto da etapa 2.
+    First thing to run on the GPU machine to confirm the setup; does not depend
+    on the rest of stage 2.
     """
     import requests
 
@@ -415,19 +415,19 @@ def check_ollama(config: OllamaConfig) -> tuple[bool, str]:
         response.raise_for_status()
     except Exception as exc:
         return False, (
-            f"Ollama não respondeu em {config.base_url}: {exc}\n"
-            "Verifique se o serviço está rodando (`ollama serve`)."
+            f"Ollama did not respond at {config.base_url}: {exc}\n"
+            "Check the service is running (`ollama serve`)."
         )
 
     modelos = [m.get("name", "") for m in response.json().get("models", [])]
     if not any(m == config.model or m.startswith(f"{config.model}:") for m in modelos):
         return False, (
-            f"Ollama no ar, mas o modelo {config.model!r} não está baixado.\n"
-            f"Modelos disponíveis: {', '.join(modelos) or '(nenhum)'}\n"
-            f"Baixe com: ollama pull {config.model}"
+            f"Ollama is up, but model {config.model!r} is not pulled.\n"
+            f"Available models: {', '.join(modelos) or '(none)'}\n"
+            f"Pull it with: ollama pull {config.model}"
         )
 
-    return True, f"Ollama OK em {config.base_url}, modelo {config.model} disponível."
+    return True, f"Ollama OK at {config.base_url}, model {config.model} available."
 
 
 def save_digest(digest: Digest, out_dir: Path) -> Path:

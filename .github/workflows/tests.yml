@@ -1,0 +1,31 @@
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12", "3.13"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      # requirements-dev.txt deliberately excludes the audio stack: the suite
+      # must pass without Kokoro, a GPU, an API key or a network. The stage 4
+      # tests that need numpy/pydub skip themselves via pytest.importorskip.
+      - run: pip install -r requirements-dev.txt
+
+      - run: python -m pytest -v
+        env:
+          PYTHONIOENCODING: utf-8
