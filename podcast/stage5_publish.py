@@ -100,11 +100,11 @@ def _read_meta(mp3_path: Path) -> dict:
     try:
         meta = json.loads(meta_path.read_text(encoding="utf-8"))
     except json.JSONDecodeError:
-        log.warning("sidecar corrompido, ignorando: %s", meta_path)
+        log.warning("corrupt sidecar, ignoring: %s", meta_path)
         return _fallback_meta(mp3_path)
 
     if "title" not in meta:
-        log.warning("sidecar sem 'title', ignorando: %s", meta_path)
+        log.warning("sidecar has no 'title', ignoring: %s", meta_path)
         return _fallback_meta(mp3_path)
     return meta
 
@@ -122,7 +122,7 @@ def _prune_old_episodes(mp3_files: list[Path]) -> list[Path]:
     mp3_files = sorted(mp3_files, key=lambda p: p.stem, reverse=True)
     manter, descartar = mp3_files[:MAX_EPISODES_IN_FEED], mp3_files[MAX_EPISODES_IN_FEED:]
     for antigo in descartar:
-        log.info("removendo episódio antigo do feed: %s", antigo.name)
+        log.info("removing old episode from feed: %s", antigo.name)
         antigo.unlink(missing_ok=True)
         _meta_path(antigo).unlink(missing_ok=True)
     return manter
@@ -167,7 +167,7 @@ def build_feed(config: PublishConfig, public_dir: Path) -> Path:
 
     feed_path = public_dir / FEED_FILENAME
     fg.rss_file(str(feed_path))
-    log.info("feed reconstruído com %d episódio(s): %s", len(mp3_files), feed_path)
+    log.info("feed rebuilt with %d episode(s): %s", len(mp3_files), feed_path)
     return feed_path
 
 
@@ -196,13 +196,13 @@ def default_pusher(public_dir: Path, message: str) -> None:
         capture_output=True, text=True, check=True,
     )
     if not status.stdout.strip():
-        log.info("nada para publicar — %s já está atualizado", public_dir)
+        log.info("nothing to publish - %s is already up to date", public_dir)
         return
 
     subprocess.run(["git", "-C", str(public_dir), "add", "-A"], check=True)
     subprocess.run(["git", "-C", str(public_dir), "commit", "-m", message], check=True)
     subprocess.run(["git", "-C", str(public_dir), "push"], check=True)
-    log.info("publicado no GitHub Pages: %s", message)
+    log.info("published to GitHub Pages: %s", message)
 
 
 def publish_episode(

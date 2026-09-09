@@ -1,0 +1,55 @@
+{
+  "generated_at": "2026-08-04T17:57:16.518500+00:00",
+  "episode_date": "2026-08-04",
+  "title": "Indústria em queda, Copom no radar e o tabuleiro eleitoral de 2026",
+  "themes": [
+    "Política monetária e indústria",
+    "Estímulos fiscais do governo Lula",
+    "Bolsa e câmbio sob pressão geopolítica",
+    "Corrida presidencial de 2026",
+    "Defesa e relações internacionais"
+  ],
+  "model": "claude-sonnet-5",
+  "lines": [
+    {
+      "speaker": "Maria",
+      "text": "Bom dia, começamos mais um episódio nesta terça-feira, quatro de agosto de dois mil e vinte e seis. Hoje temos um pacote grande: a indústria brasileira desacelerou, o governo já gastou uma fortuna em medidas de estímulo, a bolsa e o dólar reagem à guerra no Oriente Médio, e a corrida para a Presidência de dois mil e vinte e seis já tem seus primeiros nomes definidos. Pedro, por onde a gente entra?"
+    },
+    {
+      "speaker": "Pedro",
+      "text": "Eu entraria pela indústria, porque é o dado mais recente e ele conecta com quase tudo que vamos falar depois. O IBGE mostrou que a produção industrial brasileira caiu um vírgula oito por cento de maio para junho. Parece um número pequeno, mas numa base mensal isso é uma queda relevante, e o mercado prestou atenção porque esse dado entra direto na conta do Copom."
+    },
+    {
+      "speaker": "Maria",
+      "text": "Vamos por partes. Primeiro, o que é o Copom, pra quem não acompanha isso no dia a dia?"
+    },
+    {
+      "speaker": "Pedro",
+      "text": "Copom é o Comitê de Política Monetária do Banco Central. É o grupo que se reúne a cada quarenta e cinco dias, mais ou menos, e decide a Selic, que é a taxa básica de juros da economia brasileira. Toda taxa de juro que você vê no banco, cartão de crédito, financiamento, parte dessa referência. Quando a Selic sobe, o crédito fica mais caro, as pessoas e empresas tomam menos empréstimo, consomem menos, e isso tende a puxar a inflação para baixo com o tempo."
+    },
+    {
+      "speaker": "Maria",
+      "text": "E por que uma queda na indústria afeta essa decisão?"
+    },
+    {
+      "speaker": "Pedro",
+      "text": "Porque o Copom não olha só inflação, olha também atividade econômica. Se a indústria está desacelerando, isso é um sinal de que a economia já está sentindo o peso dos juros altos. O comitê pode entender que não precisa apertar mais, ou até que já é hora de pensar em afrouxar, dependendo de como a inflação estiver reagindo nos próximos meses."
+    },
+    {
+      "speaker": "Maria",
+      "text": "Isso é bom ou mau sinal, então? Porque à primeira vista parece só notícia ruim."
+    },
+    {
+      "speaker": "Pedro",
+      "text": "É ambíguo, e é isso que torna interessante. Por um lado, indústria mais fraca significa menos empregos sendo criados no setor, menos investimento, menos exportação de manufaturados. Por outro lado, se essa desaceleração ajudar a controlar a inflação, pode abrir espaço para o Banco Central começar a cortar a Selic mais cedo, o que barateia crédito para todo mundo, inclusive para quem quer comprar casa ou carro financiado."
+    },
+    {
+      "speaker": "Pedro",
+      "text": "E o fio que conecta tudo isso é a incerteza. Incerteza fiscal, incerteza eleitoral, incerteza geopolítica. O mercado brasileiro está tentando precificar todas essas variáveis ao mesmo tempo, e é por isso que vemos tanta oscilação de curto prazo tanto na bolsa quanto no câmbio."
+    },
+    {
+      "speaker": "Maria",
+      "text": "Ficamos por aqui. Obrigada por ouvir, e a gente se encontra no próximo episódio para continuar acompanhando esses temas de perto."
+    }
+  ]
+}

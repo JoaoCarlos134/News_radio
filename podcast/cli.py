@@ -247,6 +247,85 @@ def cmd_publish(config: Config, args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_demo(config: Config, args: argparse.Namespace) -> int:
+    """Run the real pipeline code over committed fixtures.
+
+    Exists because the pipeline needs a GPU, a paid key and the Kokoro weights,
+    so a fresh clone cannot otherwise produce anything. Every stage below runs
+    its actual implementation; only the three external calls are skipped, and
+    the feed is written to a scratch directory with a no-op pusher.
+    """
+    from .config import PublishConfig
+    from .stage2_summarize import load_digest
+    from .stage3_script import (
+        WORDS_PER_MINUTE,
+        build_user_prompt,
+        estimate_minutes,
+        load_script,
+    )
+    from .stage4_audio import plan_segments
+    from .stage5_publish import publish_episode
+
+    raiz = Path(__file__).resolve().parent.parent
+    digest_file = raiz / "demo" / "digest.json"
+    script_file = raiz / "demo" / "script.json"
+    audio = raiz / "docs" / "sample-voice.mp3"
+
+    faltando = [p for p in (digest_file, script_file, audio) if not p.exists()]
+    if faltando:
+        print("Demo files missing: " + ", ".join(str(p) for p in faltando),
+              file=sys.stderr)
+        return 1
+
+    print("Demo - real pipeline code over committed fixtures.")
+    print("No API key, no GPU, no network. Nothing is published.\n")
+
+    digest = load_digest(digest_file)
+    print(f"[stage 2] digest of {len(digest.items)} items")
+    print(f"          themes: {', '.join(digest.themes)}")
+
+    prompt = build_user_prompt(
+        digest, "2026-08-04", config.script.target_minutes, config.script.max_minutes,
+    )
+    print(f"\n[stage 3] built a {len(prompt)}-character prompt and did NOT send it.")
+    print("          This is the only call in the pipeline that costs money.")
+    print("          Asking for a total word count returns about half, so the")
+    print("          prompt decomposes it per theme:")
+    for linha in prompt.splitlines()[4:6]:
+        print(f"            {linha}")
+
+    script = load_script(script_file)
+    print(f"\n[stage 3] fixture output: {script.title}")
+    print(f"          {len(script.lines)} lines, {script.word_count} words "
+          f"(~{estimate_minutes(script.word_count):.1f} min at {WORDS_PER_MINUTE} wpm)")
+    for line in script.lines[:2]:
+        print(f"            {line.speaker}: {line.text[:96]}...")
+
+    segments = plan_segments(script, config.audio)
+    print(f"\n[stage 4] planned {len(segments)} TTS segments from "
+          f"{len(script.lines)} lines.")
+    print("          No synthesis here - that needs the Kokoro model files.")
+
+    public_dir = config.data_dir / "demo"
+    feed = publish_episode(
+        script,
+        audio,
+        PublishConfig(
+            base_url="https://example.github.io/demo-feed",
+            title="News Radio - demo",
+            author="Demo",
+            email="demo@example.com",
+        ),
+        public_dir,
+        pusher=lambda directory, message: None,  # never touches git
+    )
+    print(f"\n[stage 5] real RSS feed generated: {feed}")
+    print(f"          {feed.stat().st_size} bytes, "
+          f"audio from {audio.name}")
+    print("\nThat feed.xml is genuine output - subscribe to it locally if you like.")
+    return 0
+
+
 def cmd_run(config: Config, args: argparse.Namespace) -> int:
     """The whole pipeline. This is what the overnight scheduler calls."""
     inicio = datetime.now(timezone.utc)
@@ -306,6 +385,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     sub.add_parser("publish", help="stage 5 - RSS feed")
     sub.add_parser("run", help="run all five stages in order")
+    sub.add_parser("demo", help="run the pipeline over fixtures; no key, GPU or network")
 
     return parser
 
@@ -319,6 +399,7 @@ COMMANDS = {
     "audio": cmd_audio,
     "publish": cmd_publish,
     "run": cmd_run,
+    "demo": cmd_demo,
 }
 
 

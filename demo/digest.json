@@ -1,0 +1,65 @@
+{
+  "generated_at": "2026-08-04T15:39:27.195877+00:00",
+  "themes": [
+    "eleições presidenciais brasileiras",
+    "política monetária e econômica",
+    "conflito internacional",
+    "relações internacionais e defesa"
+  ],
+  "items": [
+    {
+      "item_id": "25c93ef152cbf92a",
+      "title": "Lula, Flávio Bolsonaro e os outros candidatos: quem está na disputa pela Presidência em 2026",
+      "summary": "A disputa pela Presidência em 2026 no Brasil inclui Lula e Flávio Bolsonaro entre os principais candidatos.",
+      "source_name": "BBC News Brasil",
+      "link": "https://www.bbc.com/portuguese/articles/cly8vyqv06jo?at_medium=RSS&at_campaign=rss",
+      "theme": "eleições presidenciais brasileiras",
+      "relevance": 10
+    },
+    {
+      "item_id": "5351ac18706c4a12",
+      "title": "EUA falam em 'força tarefa para o Hemisfério Ocidental' e anunciam exercícios militares com Brasil e outros 17 países",
+      "summary": "Os EUA anunciaram uma mudança no nome e em exercícios militares conjuntos com Brasil e outros 17 países na América Latina.",
+      "source_name": "g1",
+      "link": "https://g1.globo.com/mundo/noticia/2026/08/04/eua-forca-tarefa-hemisferio-ocidental-exercicios-militares-com-brasil-e-17-paises.ghtml",
+      "theme": "relações internacionais e defesa",
+      "relevance": 9
+    },
+    {
+      "item_id": "f065f24829912c39",
+      "title": "Produção da indústria brasileira cai 1,8% de maio para junho",
+      "summary": "A produção industrial brasileira caiu 1,8% de maio para junho, segundo o IBGE.",
+      "source_name": "Agência Brasil",
+      "link": "https://agenciabrasil.ebc.com.br/economia/noticia/2026-08/producao-da-industria-brasileira-cai-18-de-maio-para-junho",
+      "theme": "indústria",
+      "relevance": 9
+    },
+    {
+      "item_id": "9979cf63f23fa58e",
+      "title": "EUA utilizaram 'praticamente todo' o estoque de mísseis de precisão de longo alcance durante guerra do Irã, diz agência",
+      "summary": "Os EUA utilizaram quase todo o estoque de mísseis de precisão durante a guerra contra o Irã, segundo a Reuters.",
+      "source_name": "g1",
+      "link": "https://g1.globo.com/mundo/noticia/2026/08/04/eua-utilizaram-praticamente-todo-estoque-misseis-precisao-longo-alcance-guerra-ira-diz-agencia.ghtml",
+      "theme": "guerra e defesa",
+      "relevance": 9
+    },
+    {
+      "item_id": "e54c38e17fa18f9c",
+      "title": "Ataque de drones ucranianos em praia da Rússia deixa sete mortos, incluindo três crianças",
+      "summary": "Um ataque de drones ucranianos em uma praia da Rússia resultou na morte de sete pessoas, incluindo três crianças.",
+      "source_name": "Estadão",
+      "link": "https://www.estadao.com.br/internacional/ataque-drones-ucranianos-praia-russia-mortos-criancas-npr",
+      "theme": "conflito internacional",
+      "relevance": 9
+    },
+    {
+      "item_id": "ae2079749a7edf49",
+      "title": "'Bondades' de Lula superam R$ 280 bilhões e se aproximam de pacote de Bolsonaro",
+      "summary": "As medidas econômicas anunciadas pelo governo Lula já somam R$ 283,2 bilhões e se aproximam do pacote de Bolsonaro de R$ 325 bilhões.",
+      "source_name": "g1",
+      "link": "https://g1.globo.com/economia/noticia/2026/08/03/bondades-de-lula-superam-r-280-bilhoes-e-se-aproximam-de-pacote-de-bolsonaro.ghtml",
+      "theme": "política econômica",
+      "relevance": 9
+    }
+  ]
+}
