@@ -4,6 +4,11 @@
 [![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 ![python](https://img.shields.io/badge/python-3.11%20%7C%203.12%20%7C%203.13-blue.svg)
 
+> **Status (October 2026): paused.** Daily runs are stopped because stage 3 needs a paid
+> API key and there is no budget for it at the moment. Everything is in place to resume:
+> add the key to `.env` and re-enable the scheduled task. The `demo` command still runs
+> with no key, GPU or network.
+
 **An automated pipeline that turns each day's economy and geopolitics headlines into a two-voice podcast episode — collected, analysed, narrated and published without a human in the loop.** It runs overnight on a home PC and drops a finished ~19-minute episode into a private RSS feed before breakfast.
 
 ### What makes it interesting

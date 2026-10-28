@@ -5,6 +5,10 @@ news into a two-voice podcast episode (Maria and Pedro), synthesises the audio
 locally, and publishes to a private RSS feed for the iOS Podcasts app. See
 README.md for setup and the cost table.
 
+## Status (2026-10-28): paused
+
+The daily pipeline is stopped: stage 3 needs a paid API key and the author has no budget for it right now. Don't treat the stopped schedule or missing key as a bug. Resuming means adding the key to `.env` and re-enabling the scheduled task; check the Cost section of README.md first.
+
 ## Commands
 
 ```bash
